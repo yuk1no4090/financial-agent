@@ -279,7 +279,7 @@ Requirements:
 
 ### 9.2 Financial Analysis Skill
 
-Status: planned.
+Status: MVP implemented.
 
 Requirements:
 
@@ -296,7 +296,7 @@ Requirements:
 
 ### 9.3 FinMA Expert Tool
 
-Status: planned.
+Status: MVP implemented.
 
 Requirements:
 
@@ -306,6 +306,13 @@ Requirements:
 - Accept a task type and short context.
 - Return structured JSON.
 
+Implementation:
+
+- Skill: `skills/public/financial-analysis/SKILL.md`
+- Tool: `backend/packages/harness/deerflow/community/finma/tools.py`
+- Samples: `evals/finma_expert_samples.jsonl`
+- Evaluation runner: `scripts/evaluate_finma_expert.py`
+
 Example tool request:
 
 ```json
@@ -313,7 +320,7 @@ Example tool request:
   "task": "event_impact",
   "ticker": "NVDA",
   "text": "NVIDIA reported strong data center growth...",
-  "schema": "impact_direction,rationale,confidence"
+  "output_schema": "impact_direction,rationale,confidence"
 }
 ```
 
@@ -666,4 +673,3 @@ The project is successful if:
 5. Prepare a small evaluation set with 20 to 50 examples.
 6. Decide GPU deployment path for real FinMA.
 7. Draft LoRA/QLoRA training plan and data schema.
-

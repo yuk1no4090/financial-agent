@@ -279,7 +279,7 @@ FinMA 处理：
 
 ### 9.2 Financial Analysis Skill
 
-状态：计划中。
+状态：MVP 已实现。
 
 需求：
 
@@ -296,7 +296,7 @@ FinMA 处理：
 
 ### 9.3 FinMA Expert Tool
 
-状态：计划中。
+状态：MVP 已实现。
 
 需求：
 
@@ -306,6 +306,13 @@ FinMA 处理：
 - 接收 task type 和短上下文。
 - 返回结构化 JSON。
 
+实现位置：
+
+- Skill：`skills/public/financial-analysis/SKILL.md`
+- Tool：`backend/packages/harness/deerflow/community/finma/tools.py`
+- Samples：`evals/finma_expert_samples.jsonl`
+- Evaluation runner：`scripts/evaluate_finma_expert.py`
+
 示例 tool request：
 
 ```json
@@ -313,7 +320,7 @@ FinMA 处理：
   "task": "event_impact",
   "ticker": "NVDA",
   "text": "NVIDIA reported strong data center growth...",
-  "schema": "impact_direction,rationale,confidence"
+  "output_schema": "impact_direction,rationale,confidence"
 }
 ```
 
@@ -666,4 +673,3 @@ Group B：Agentic financial analysis 任务：
 5. 准备 20 到 50 条小规模评测样本。
 6. 决定真实 FinMA 的 GPU 部署方式。
 7. 起草 LoRA/QLoRA training plan 和 data schema。
-
