@@ -18,6 +18,10 @@ jobs:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      # Unit tests load config.yaml but should not require real local credentials.
+      ZHIPUAI_API_KEY: test-zhipu-key
+      FINMA_API_KEY: test-finma-key
 
     steps:
       - name: Checkout
