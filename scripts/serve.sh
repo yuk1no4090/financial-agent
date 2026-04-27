@@ -91,6 +91,7 @@ stop_all() {
     _kill_port 2024
     _kill_port 8001
     _kill_port 3000
+    _kill_port 2026
     ./scripts/cleanup-containers.sh deer-flow-sandbox 2>/dev/null || true
     echo "✓ All services stopped"
 }

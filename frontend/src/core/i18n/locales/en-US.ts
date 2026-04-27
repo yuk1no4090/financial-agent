@@ -1,12 +1,12 @@
 import {
-  CompassIcon,
-  GraduationCapIcon,
-  ImageIcon,
+  FileSearchIcon,
+  LandmarkIcon,
+  LineChartIcon,
   MicroscopeIcon,
-  PenLineIcon,
-  ShapesIcon,
+  NewspaperIcon,
+  ScaleIcon,
   SparklesIcon,
-  VideoIcon,
+  TrendingUpIcon,
 } from "lucide-react";
 
 import type { Translations } from "./types";
@@ -59,9 +59,9 @@ export const enUS: Translations = {
 
   // Welcome
   welcome: {
-    greeting: "Hello, again!",
+    greeting: "Financial analysis desk",
     description:
-      "Welcome to 🦌 DeerFlow, an open source super agent. With built-in and custom skills, DeerFlow helps you search on the web, analyze data, and generate artifacts like slides, web pages and do almost anything.",
+      "Ask for earnings analysis, valuation work, risk review, peer comparison or market briefs. FinAgent coordinates tools, skills and sub-agents into source-backed investment research.",
 
     createYourOwnSkill: "Create Your Own Skill",
     createYourOwnSkillDescription:
@@ -78,7 +78,8 @@ export const enUS: Translations = {
 
   // Input Box
   inputBox: {
-    placeholder: "How can I assist you today?",
+    placeholder:
+      "Ask for an earnings review, valuation memo, peer comparison or risk analysis...",
     createSkillPrompt:
       "We're going to build a new skill step by step with `skill-creator`. To start, what do you want this skill to do?",
     addAttachments: "Add attachments",
@@ -106,8 +107,9 @@ export const enUS: Translations = {
     reasoningEffortHighDescription:
       "Full-dimensional Logic Deduction + Multi-path Verification + Backward Check",
     searchModels: "Search models...",
-    surpriseMe: "Surprise",
-    surpriseMePrompt: "Surprise me",
+    surpriseMe: "Market brief",
+    surpriseMePrompt:
+      "Create a concise market brief for the most important technology stock moves this week. Cover catalysts, risks and what to watch next.",
     followupLoading: "Generating follow-up questions...",
     followupConfirmTitle: "Send suggestion?",
     followupConfirmDescription:
@@ -116,50 +118,56 @@ export const enUS: Translations = {
     followupConfirmReplace: "Replace & send",
     suggestions: [
       {
-        suggestion: "Write",
-        prompt: "Write a blog post about the latest trends on [topic]",
-        icon: PenLineIcon,
-      },
-      {
-        suggestion: "Research",
+        suggestion: "Earnings",
         prompt:
-          "Conduct a deep dive research on [topic], and summarize the findings.",
+          "Analyze [ticker]'s latest earnings. Cover revenue drivers, margin trend, cash flow, guidance, catalysts, risks and source-backed conclusions.",
+        icon: FileSearchIcon,
+      },
+      {
+        suggestion: "Valuation",
+        prompt:
+          "Build a valuation memo for [ticker]. Compare multiples, growth, profitability, balance-sheet quality and key assumptions.",
+        icon: ScaleIcon,
+      },
+      {
+        suggestion: "Compare",
+        prompt:
+          "Compare [ticker A] and [ticker B] across growth, margins, valuation, competitive position, catalysts and risks.",
+        icon: LineChartIcon,
+      },
+      {
+        suggestion: "Risk",
+        prompt:
+          "Review the main investment risks for [ticker], including accounting, liquidity, regulation, competition and macro sensitivity.",
         icon: MicroscopeIcon,
-      },
-      {
-        suggestion: "Collect",
-        prompt: "Collect data from [source] and create a report.",
-        icon: ShapesIcon,
-      },
-      {
-        suggestion: "Learn",
-        prompt: "Learn about [topic] and create a tutorial.",
-        icon: GraduationCapIcon,
       },
     ],
     suggestionsCreate: [
       {
-        suggestion: "Webpage",
-        prompt: "Create a webpage about [topic]",
-        icon: CompassIcon,
+        suggestion: "Investment memo",
+        prompt:
+          "Generate an investment memo for [ticker] with executive summary, business overview, financial performance, valuation, catalysts, risks and sources.",
+        icon: LandmarkIcon,
       },
       {
-        suggestion: "Image",
-        prompt: "Create an image about [topic]",
-        icon: ImageIcon,
+        suggestion: "News brief",
+        prompt:
+          "Create a market news brief for [ticker or sector]. Summarize recent news, likely impact, sentiment and follow-up questions.",
+        icon: NewspaperIcon,
       },
       {
-        suggestion: "Video",
-        prompt: "Create a video about [topic]",
-        icon: VideoIcon,
+        suggestion: "Portfolio review",
+        prompt:
+          "Review this portfolio: [holdings]. Identify concentration, factor exposure, drawdown risks and rebalancing ideas.",
+        icon: TrendingUpIcon,
       },
       {
         type: "separator",
       },
       {
-        suggestion: "Skill",
+        suggestion: "Financial skill",
         prompt:
-          "We're going to build a new skill step by step with `skill-creator`. To start, what do you want this skill to do?",
+          "We're going to build a new financial-analysis skill step by step with `skill-creator`. Start by asking what financial workflow this skill should cover.",
         icon: SparklesIcon,
       },
     ],

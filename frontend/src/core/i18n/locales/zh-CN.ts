@@ -1,12 +1,12 @@
 ﻿import {
-  CompassIcon,
-  GraduationCapIcon,
-  ImageIcon,
+  FileSearchIcon,
+  LandmarkIcon,
+  LineChartIcon,
   MicroscopeIcon,
-  PenLineIcon,
-  ShapesIcon,
+  NewspaperIcon,
+  ScaleIcon,
   SparklesIcon,
-  VideoIcon,
+  TrendingUpIcon,
 } from "lucide-react";
 
 import type { Translations } from "./types";
@@ -59,9 +59,9 @@ export const zhCN: Translations = {
 
   // Welcome
   welcome: {
-    greeting: "你好，欢迎回来！",
+    greeting: "金融分析工作台",
     description:
-      "欢迎使用 🦌 DeerFlow，一个完全开源的超级智能体。通过内置和自定义的 Skills，\nDeerFlow 可以帮你搜索网络、分析数据，还能为你生成幻灯片、\n图片、视频、播客及网页等，几乎可以做任何事情。",
+      "你可以让 FinAgent 做财报分析、估值备忘录、同业比较、风险审查和市场简报。\n它会把工具、Skills 和子智能体组织起来，生成带来源依据的投研结论。",
 
     createYourOwnSkill: "创建你自己的 Agent SKill",
     createYourOwnSkillDescription:
@@ -78,7 +78,7 @@ export const zhCN: Translations = {
 
   // Input Box
   inputBox: {
-    placeholder: "今天我能为你做些什么？",
+    placeholder: "输入财报分析、估值备忘录、同业比较或风险审查任务...",
     createSkillPrompt:
       "我们一起用 skill-creator 技能来创建一个技能吧。先问问我希望这个技能能做什么。",
     addAttachments: "添加附件",
@@ -102,8 +102,9 @@ export const zhCN: Translations = {
     reasoningEffortHigh: "高",
     reasoningEffortHighDescription: "全维度逻辑推演 + 多路径验证 + 反推校验",
     searchModels: "搜索模型...",
-    surpriseMe: "小惊喜",
-    surpriseMePrompt: "给我一个小惊喜吧",
+    surpriseMe: "市场简报",
+    surpriseMePrompt:
+      "生成一份本周科技股重要异动的市场简报，覆盖催化因素、风险和后续观察点。",
     followupLoading: "正在生成可能的后续问题...",
     followupConfirmTitle: "发送建议问题？",
     followupConfirmDescription: "当前输入框已有内容，选择发送方式。",
@@ -111,49 +112,56 @@ export const zhCN: Translations = {
     followupConfirmReplace: "替换并发送",
     suggestions: [
       {
-        suggestion: "写作",
-        prompt: "撰写一篇关于[主题]的博客文章",
-        icon: PenLineIcon,
+        suggestion: "财报",
+        prompt:
+          "分析 [股票代码] 最新财报，覆盖收入驱动、毛利率变化、现金流、指引、催化因素、风险和引用来源。",
+        icon: FileSearchIcon,
       },
       {
-        suggestion: "研究",
-        prompt: "深入浅出的研究一下[主题]，并总结发现。",
+        suggestion: "估值",
+        prompt:
+          "为 [股票代码] 生成估值备忘录，比较估值倍数、增长、盈利能力、资产负债质量和关键假设。",
+        icon: ScaleIcon,
+      },
+      {
+        suggestion: "同业比较",
+        prompt:
+          "比较 [股票A] 和 [股票B] 的增长、利润率、估值、竞争地位、催化因素和风险。",
+        icon: LineChartIcon,
+      },
+      {
+        suggestion: "风险",
+        prompt:
+          "审查 [股票代码] 的主要投资风险，包括会计、流动性、监管、竞争和宏观敏感性。",
         icon: MicroscopeIcon,
-      },
-      {
-        suggestion: "收集",
-        prompt: "从[来源]收集数据并创建报告。",
-        icon: ShapesIcon,
-      },
-      {
-        suggestion: "学习",
-        prompt: "学习关于[主题]并创建教程。",
-        icon: GraduationCapIcon,
       },
     ],
     suggestionsCreate: [
       {
-        suggestion: "网页",
-        prompt: "生成一个关于[主题]的网页",
-        icon: CompassIcon,
+        suggestion: "投资备忘录",
+        prompt:
+          "为 [股票代码] 生成投资备忘录，包括执行摘要、业务概览、财务表现、估值、催化因素、风险和来源。",
+        icon: LandmarkIcon,
       },
       {
-        suggestion: "图片",
-        prompt: "生成一个关于[主题]的图片",
-        icon: ImageIcon,
+        suggestion: "新闻简报",
+        prompt:
+          "为 [股票或行业] 生成市场新闻简报，总结近期新闻、潜在影响、市场情绪和后续问题。",
+        icon: NewspaperIcon,
       },
       {
-        suggestion: "视频",
-        prompt: "生成一个关于[主题]的视频",
-        icon: VideoIcon,
+        suggestion: "组合诊断",
+        prompt:
+          "诊断这个投资组合：[持仓]。识别集中度、因子暴露、回撤风险和再平衡建议。",
+        icon: TrendingUpIcon,
       },
       {
         type: "separator",
       },
       {
-        suggestion: "技能",
+        suggestion: "金融技能",
         prompt:
-          "我们一起用 skill-creator 技能来创建一个技能吧。先问问我希望这个技能能做什么。",
+          "我们一起用 skill-creator 创建一个金融分析技能。先询问这个技能应该覆盖哪类投研工作流。",
         icon: SparklesIcon,
       },
     ],

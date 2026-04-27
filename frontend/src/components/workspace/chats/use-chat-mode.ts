@@ -13,10 +13,13 @@ export function useSpecificChatMode() {
   const searchParams = useSearchParams();
   const promptInputController = usePromptInputController();
   const inputInitialValue = useMemo(() => {
-    if (threadIdFromPath !== "new" || searchParams.get("mode") !== "skill") {
+    if (threadIdFromPath !== "new") {
       return undefined;
     }
-    return t.inputBox.createSkillPrompt;
+    if (searchParams.get("mode") === "skill") {
+      return t.inputBox.createSkillPrompt;
+    }
+    return searchParams.get("initialPrompt") ?? undefined;
   }, [threadIdFromPath, searchParams, t.inputBox.createSkillPrompt]);
   const lastInitialValueRef = useRef<string | undefined>(undefined);
   const setInputRef = useRef(promptInputController.textInput.setInput);

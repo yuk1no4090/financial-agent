@@ -1,5 +1,6 @@
 "use client";
 
+import { LandmarkIcon } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo } from "react";
 
@@ -41,8 +42,13 @@ export function Welcome({
           `✨ ${t.welcome.createYourOwnSkill} ✨`
         ) : (
           <div className="flex items-center gap-2">
-            <div className={cn("inline-block", !waved ? "animate-wave" : "")}>
-              {isUltra ? "🚀" : "👋"}
+            <div
+              className={cn(
+                "bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-md",
+                !waved ? "animate-wave" : "",
+              )}
+            >
+              <LandmarkIcon className="size-4" />
             </div>
             <AuroraText colors={colors}>{t.welcome.greeting}</AuroraText>
           </div>
