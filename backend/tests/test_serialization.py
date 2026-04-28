@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from langchain_core.messages import HumanMessage
+
 
 class _FakePydanticV2:
     """Object with model_dump (Pydantic v2)."""
@@ -157,3 +159,32 @@ def test_serialize_dispatcher_default_mode():
 
     result = serialize(_FakePydanticV1())
     assert result == {"key": "v1"}
+
+
+def test_serialize_channel_values_hides_internal_rewrite_messages():
+    from deerflow.runtime.serialization import serialize_channel_values
+
+    raw = {
+        "messages": [
+            HumanMessage(content="user-visible question"),
+            HumanMessage(name="financial_analysis_rewrite", content="<system_reminder>rewrite</system_reminder>"),
+        ]
+    }
+
+    result = serialize_channel_values(raw)
+
+    assert len(result["messages"]) == 1
+    assert result["messages"][0]["content"] == "user-visible question"
+
+
+def test_serialize_messages_tuple_skips_internal_rewrite_messages():
+    from deerflow.runtime.serialization import serialize_messages_tuple
+
+    result = serialize_messages_tuple(
+        (
+            HumanMessage(name="pure_model_rewrite", content="<system_reminder>rewrite</system_reminder>"),
+            {"langgraph_node": "router"},
+        )
+    )
+
+    assert result is None

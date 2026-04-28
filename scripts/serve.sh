@@ -116,6 +116,8 @@ if $GATEWAY_MODE; then
     export SKIP_LANGGRAPH_SERVER=1
 fi
 
+GATEWAY_BIND_HOST="${GATEWAY_HOST:-0.0.0.0}"
+
 # Mode label for banner
 if $DEV_MODE && $GATEWAY_MODE; then
     MODE_LABEL="DEV + GATEWAY (experimental)"
@@ -288,7 +290,7 @@ fi
 
 # 2. Gateway API
 run_service "Gateway" \
-    "cd backend && PYTHONPATH=. uv run uvicorn app.gateway.app:app --host 0.0.0.0 --port 8001 $GATEWAY_EXTRA_FLAGS > ../logs/gateway.log 2>&1" \
+    "cd backend && PYTHONPATH=. uv run uvicorn app.gateway.app:app --host $GATEWAY_BIND_HOST --port 8001 $GATEWAY_EXTRA_FLAGS > ../logs/gateway.log 2>&1" \
     8001 30
 
 # 3. Frontend

@@ -38,6 +38,7 @@ _BUSY_PATTERNS = (
     "服务繁忙",
     "稍后重试",
     "请稍后重试",
+    "event loop is closed",
 )
 _QUOTA_PATTERNS = (
     "insufficient_quota",

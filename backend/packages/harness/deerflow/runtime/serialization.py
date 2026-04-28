@@ -12,6 +12,37 @@ from __future__ import annotations
 
 from typing import Any
 
+try:
+    from langchain_core.messages import BaseMessage
+except Exception:  # pragma: no cover - keeps serialization usable in minimal test envs
+    BaseMessage = None  # type: ignore[assignment]
+
+
+_OMIT = object()
+_HIDDEN_MESSAGE_NAMES = {
+    "financial_analysis_rewrite",
+    "pure_model_rewrite",
+    "router_financial_glm_guide",
+    "router_context_memory_glm_guide",
+    "router_report_skill_glm_guide",
+    "router_general_glm_guide",
+    "pure_glm_mode_guide",
+    "financial_agent_direct_mode_guide",
+    "financial_analysis_synthesis_guide",
+}
+
+
+def _should_hide_message_dict(obj: dict[str, Any]) -> bool:
+    msg_type = str(obj.get("type") or "").lower()
+    msg_name = str(obj.get("name") or "")
+    return msg_type in {"human", "user"} and msg_name in _HIDDEN_MESSAGE_NAMES
+
+
+def _should_hide_message_object(obj: Any) -> bool:
+    msg_name = getattr(obj, "name", None)
+    msg_type = str(getattr(obj, "type", "") or "").lower()
+    return msg_type in {"human", "user"} and isinstance(msg_name, str) and msg_name in _HIDDEN_MESSAGE_NAMES
+
 
 def serialize_lc_object(obj: Any) -> Any:
     """Recursively serialize a LangChain object to a JSON-serialisable dict."""
@@ -20,9 +51,18 @@ def serialize_lc_object(obj: Any) -> Any:
     if isinstance(obj, (str, int, float, bool)):
         return obj
     if isinstance(obj, dict):
-        return {k: serialize_lc_object(v) for k, v in obj.items()}
+        if _should_hide_message_dict(obj):
+            return _OMIT
+        return {
+            k: value
+            for k, raw in obj.items()
+            if (value := serialize_lc_object(raw)) is not _OMIT
+        }
     if isinstance(obj, (list, tuple)):
-        return [serialize_lc_object(item) for item in obj]
+        return [value for item in obj if (value := serialize_lc_object(item)) is not _OMIT]
+    if BaseMessage is not None and isinstance(obj, BaseMessage):
+        if _should_hide_message_object(obj):
+            return _OMIT
     # Pydantic v2
     if hasattr(obj, "model_dump"):
         try:
@@ -60,7 +100,10 @@ def serialize_messages_tuple(obj: Any) -> Any:
     """Serialize a messages-mode tuple ``(chunk, metadata)``."""
     if isinstance(obj, tuple) and len(obj) == 2:
         chunk, metadata = obj
-        return [serialize_lc_object(chunk), metadata if isinstance(metadata, dict) else {}]
+        serialized_chunk = serialize_lc_object(chunk)
+        if serialized_chunk is _OMIT:
+            return None
+        return [serialized_chunk, metadata if isinstance(metadata, dict) else {}]
     return serialize_lc_object(obj)
 
 

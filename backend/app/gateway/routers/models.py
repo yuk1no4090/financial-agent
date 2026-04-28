@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 from deerflow.config import get_app_config
 
 router = APIRouter(prefix="/api", tags=["models"])
+_HIDDEN_MODEL_NAMES = {"glm"}
 
 
 class ModelResponse(BaseModel):
@@ -73,6 +74,9 @@ async def list_models() -> ModelsListResponse:
         ```
     """
     config = get_app_config()
+    configured_models = config.models
+    if any(model.name in {"financial-agent", "agent-router"} for model in configured_models):
+        configured_models = [model for model in configured_models if model.name not in _HIDDEN_MODEL_NAMES]
     models = [
         ModelResponse(
             name=model.name,
@@ -82,7 +86,7 @@ async def list_models() -> ModelsListResponse:
             supports_thinking=model.supports_thinking,
             supports_reasoning_effort=model.supports_reasoning_effort,
         )
-        for model in config.models
+        for model in configured_models
     ]
     return ModelsListResponse(
         models=models,

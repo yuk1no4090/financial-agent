@@ -33,6 +33,34 @@ logger = logging.getLogger(__name__)
 _VALID_LG_MODES = {"values", "updates", "checkpoints", "tasks", "debug", "messages", "custom"}
 
 
+def _build_runtime_context(thread_id: str, config: dict) -> dict[str, Any]:
+    """Build Runtime.context so middleware can see request-level options.
+
+    ``make_lead_agent`` already reads model and mode overrides from the
+    RunnableConfig. Middleware, however, reads from ``runtime.context``.
+    Mirror the caller-provided execution context here so both layers see the
+    same logical model selection and mode flags.
+    """
+    runtime_context: dict[str, Any] = {}
+
+    configurable = config.get("configurable")
+    if isinstance(configurable, dict):
+        runtime_context.update(
+            {
+                key: value
+                for key, value in configurable.items()
+                if key != "__pregel_runtime"
+            }
+        )
+
+    explicit_context = config.get("context")
+    if isinstance(explicit_context, dict):
+        runtime_context.update(explicit_context)
+
+    runtime_context["thread_id"] = thread_id
+    return runtime_context
+
+
 async def run_agent(
     bridge: StreamBridge,
     run_manager: RunManager,
@@ -100,9 +128,10 @@ async def run_agent(
         from langchain_core.runnables import RunnableConfig
         from langgraph.runtime import Runtime
 
-        # Inject runtime context so middlewares can access thread_id
-        # (langgraph-cli does this automatically; we must do it manually)
-        runtime = Runtime(context={"thread_id": thread_id}, store=store)
+        # Inject runtime context so middlewares can access thread_id, model_name,
+        # and other request-level overrides. langgraph-cli does this
+        # automatically; the gateway must do it manually.
+        runtime = Runtime(context=_build_runtime_context(thread_id, config), store=store)
         # If the caller already set a ``context`` key (LangGraph >= 0.6.0
         # prefers it over ``configurable`` for thread-level data), make
         # sure ``thread_id`` is available there too.
@@ -160,7 +189,10 @@ async def run_agent(
                     logger.info("Run %s abort requested — stopping", run_id)
                     break
                 sse_event = _lg_mode_to_sse_event(single_mode)
-                await bridge.publish(run_id, sse_event, serialize(chunk, mode=single_mode))
+                payload = serialize(chunk, mode=single_mode)
+                if single_mode == "messages" and payload is None:
+                    continue
+                await bridge.publish(run_id, sse_event, payload)
         else:
             # Multiple modes or subgraphs: astream yields tuples
             async for item in agent.astream(
@@ -178,7 +210,10 @@ async def run_agent(
                     continue
 
                 sse_event = _lg_mode_to_sse_event(mode)
-                await bridge.publish(run_id, sse_event, serialize(chunk, mode=mode))
+                payload = serialize(chunk, mode=mode)
+                if mode == "messages" and payload is None:
+                    continue
+                await bridge.publish(run_id, sse_event, payload)
 
         # 8. Final status
         if record.abort_event.is_set():

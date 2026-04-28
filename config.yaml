@@ -36,8 +36,8 @@ token_usage:
 
 models:
   - name: financial-agent
-    display_name: Financial Agent
-    description: Financial workflow entry routed through the FinMA expert models.
+    display_name: Agent Router
+    description: Unified router entry that chooses between financial-analysis, direct GLM, context, and report paths.
     use: langchain_openai:ChatOpenAI
     model: glm-4.5
     api_key: $ZHIPUAI_API_KEY

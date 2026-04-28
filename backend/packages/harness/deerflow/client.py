@@ -552,6 +552,21 @@ class DeerFlowClient:
 
         state: dict[str, Any] = {"messages": [HumanMessage(content=message)]}
         context = {"thread_id": thread_id}
+        cfg = config.get("configurable", {}) or {}
+        for key in (
+            "model_name",
+            "mode",
+            "thinking_enabled",
+            "reasoning_effort",
+            "is_plan_mode",
+            "subagent_enabled",
+            "max_concurrent_subagents",
+            "agent_name",
+            "is_bootstrap",
+        ):
+            value = cfg.get(key)
+            if value is not None:
+                context[key] = value
         if self._agent_name:
             context["agent_name"] = self._agent_name
 
