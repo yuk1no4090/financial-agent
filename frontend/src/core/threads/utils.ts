@@ -1,5 +1,7 @@
 import type { Message } from "@langchain/langgraph-sdk";
 
+import { hasInternalMarkup } from "@/core/messages/utils";
+
 import type { AgentThread, AgentThreadContext } from "./types";
 
 type ThreadRouteTarget =
@@ -35,10 +37,13 @@ export function pathOfThread(
 
 export function textOfMessage(message: Message) {
   if (typeof message.content === "string") {
+    if (hasInternalMarkup(message.content)) {
+      return null;
+    }
     return message.content;
   } else if (Array.isArray(message.content)) {
     for (const part of message.content) {
-      if (part.type === "text") {
+      if (part.type === "text" && !hasInternalMarkup(part.text)) {
         return part.text;
       }
     }

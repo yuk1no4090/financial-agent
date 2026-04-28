@@ -118,7 +118,7 @@ def _parse_finma_content(content: str, task: str, ticker: str) -> dict:
             "impact_direction": label,
             "affected_factors": [],
             "confidence": None,
-            "rationale": "FinMA sentiment LoRA v2 returned a label-only classification.",
+            "rationale": "FinMA returned a label-only classification. Use the original text to explain the financial driver and implication.",
         }
 
     try:
@@ -134,18 +134,27 @@ def _parse_finma_content(content: str, task: str, ticker: str) -> dict:
     return parsed
 
 
-def _candidate_models(task: str) -> list[str]:
-    preferred = _get_setting("model", "finma-sentiment-v2").strip()
+def _configured_models() -> tuple[str, str | None]:
+    preferred = _get_setting("model", "finma-sentiment-v3").strip()
     fallbacks = _get_setting_list("fallback_models")
+    base_model = fallbacks[0] if fallbacks else None
+    return preferred, base_model
 
-    candidates: list[str] = []
-    if preferred:
-        candidates.append(preferred)
 
-    for model_name in fallbacks:
-        if model_name and model_name not in candidates:
-            candidates.append(model_name)
-    return candidates
+def _candidate_models(model_strategy: str) -> list[str]:
+    v3_model, base_model = _configured_models()
+    if model_strategy == "v3_and_base":
+        return [model for model in (v3_model, base_model) if model]
+    if base_model:
+        return [base_model]
+    return [v3_model] if v3_model else []
+
+
+def _prompt_for_model(model: str, task: str, ticker: str, output_schema: str, text: str) -> str:
+    if "sentiment" in model.lower():
+        return f"Classify the sentiment of this financial news. Answer only one label from Positive, Neutral, or Negative.\nNews:\n{text}"
+
+    return f"You are FinMA, a financial expert model. Return only valid JSON. Do not include markdown or extra prose.\n\nTask: {task}\nTicker: {ticker or 'unknown'}\nRequired fields: {output_schema}\n\nAnalyze this financial input:\n{text}"
 
 
 @tool("financial_analysis", parse_docstring=True)
@@ -154,10 +163,13 @@ def financial_analysis_tool(
     task: str = "event_impact",
     ticker: str = "",
     output_schema: str = "label,impact_direction,affected_factors,confidence,rationale",
+    model_strategy: str = "base_only",
     use_mock: bool = False,
 ) -> str:
     """Analyze a short financial text with the FinMA expert module and return structured JSON.
     Use this tool for focused financial NLP tasks such as sentiment analysis, risk classification, event impact, management tone, and financial signal extraction.
+    Use model_strategy="v3_and_base" for short financial news sentiment where both LoRA v3 and base should be consulted.
+    Use model_strategy="base_only" for broader financial analysis where the sentiment LoRA is not applicable.
     Keep input short. This tool is not for long documents or multi-step agent planning.
 
     Args:
@@ -165,29 +177,25 @@ def financial_analysis_tool(
         task: The requested short-context financial task, for example "sentiment", "risk_classification", "event_impact", "management_tone", or "financial_signal_extraction".
         ticker: Optional company ticker or identifier associated with the text.
         output_schema: Comma-separated fields the caller wants in the JSON response.
+        model_strategy: "v3_and_base" or "base_only".
         use_mock: Set true to force a deterministic mock response when validating workflow wiring.
     """
     base_url = _get_setting("base_url", "http://127.0.0.1:8000/v1").rstrip("/")
     api_key = _get_setting("api_key", "$FINMA_API_KEY")
-    models = _candidate_models(task)
+    strategy = model_strategy if model_strategy in {"v3_and_base", "base_only"} else "base_only"
+    models = _candidate_models(strategy)
 
     trimmed_text = text[:5000]
     if use_mock:
-        return json.dumps(_mock_finma_result(task, ticker, trimmed_text), ensure_ascii=False)
-
-    prompt = (
-        "You are FinMA, a short-context financial expert module.\n"
-        "Return only valid JSON. Do not include markdown or extra prose.\n\n"
-        f"Task: {task}\n"
-        f"Ticker: {ticker or 'unknown'}\n"
-        f"Required fields: {output_schema}\n\n"
-        "Analyze this short financial text:\n"
-        f"{trimmed_text}"
-    )
+        result = _mock_finma_result(task, ticker, trimmed_text)
+        result["model_strategy"] = strategy
+        return json.dumps(result, ensure_ascii=False)
 
     errors: list[str] = []
+    model_results: list[dict] = []
     for model in models:
         try:
+            prompt = _prompt_for_model(model, task, ticker, output_schema, trimmed_text)
             response = httpx.post(
                 f"{base_url}/chat/completions",
                 headers={
@@ -208,11 +216,32 @@ def financial_analysis_tool(
             parsed = _parse_finma_content(content, task, ticker)
             if isinstance(parsed, dict):
                 parsed.setdefault("model_used", model)
-            return json.dumps(parsed, ensure_ascii=False)
+                model_results.append(parsed)
         except Exception as exc:
             errors.append(f"{model}: {exc}")
 
+    if model_results:
+        return json.dumps(
+            {
+                "provider": "finma_ensemble",
+                "task": task,
+                "ticker": ticker or None,
+                "model_strategy": strategy,
+                "models_requested": models,
+                "model_results": model_results,
+                "errors": errors,
+                "synthesis_hint": (
+                    "Use the Financial Agent response wrapper to synthesize the FinMA outputs into a complete answer. "
+                    "For v3_and_base, compare the LoRA v3 sentiment label with the base model's broader explanation. "
+                    "Do not expose only a raw label."
+                ),
+            },
+            ensure_ascii=False,
+        )
+
     result = _mock_finma_result(task, ticker, trimmed_text)
     result["provider"] = "mock_fallback"
+    result["model_strategy"] = strategy
+    result["models_requested"] = models
     result["error"] = " | ".join(errors)
     return json.dumps(result, ensure_ascii=False)

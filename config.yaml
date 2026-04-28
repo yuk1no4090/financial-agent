@@ -37,7 +37,7 @@ token_usage:
 models:
   - name: financial-agent
     display_name: Financial Agent
-    description: Financial workflow entry backed by GLM plus the FinMA expert tool.
+    description: Financial workflow entry routed through the FinMA expert models.
     use: langchain_openai:ChatOpenAI
     model: glm-4.5
     api_key: $ZHIPUAI_API_KEY
@@ -398,7 +398,8 @@ tools:
     group: finance
     use: deerflow.community.finma.tools:financial_analysis_tool
     base_url: http://127.0.0.1:8000/v1
-    model: finma-sentiment-v2
+    model: finma-sentiment-v3
+    fallback_models: finma-7b-nlp
     api_key: $FINMA_API_KEY
 
   # Web search tool (uses DuckDuckGo, no API key required)

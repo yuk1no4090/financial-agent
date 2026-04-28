@@ -1,5 +1,8 @@
 import type { AIMessage, Message } from "@langchain/langgraph-sdk";
 
+const INTERNAL_MARKUP_RE =
+  /<system_reminder>|<tool_call>|<\/tool_call>|<arg_key>|<\/arg_key>|<arg_value>|<\/arg_value>|<function=|<\/function>|<parameter=|<\/parameter>/i;
+
 interface GenericMessageGroup<T = string> {
   type: T;
   id: string | undefined;
@@ -328,7 +331,27 @@ export function findToolCallResult(toolCallId: string, messages: Message[]) {
 }
 
 export function isHiddenFromUIMessage(message: Message) {
-  return message.additional_kwargs?.hide_from_ui === true;
+  if (message.additional_kwargs?.hide_from_ui === true) {
+    return true;
+  }
+  if (
+    message.name === "financial_analysis_synthesis" ||
+    message.name === "financial_analysis_rewrite" ||
+    message.name === "pure_model_rewrite"
+  ) {
+    return true;
+  }
+  if (
+    typeof message.content === "string" &&
+    hasInternalMarkup(message.content)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function hasInternalMarkup(content: string) {
+  return INTERNAL_MARKUP_RE.test(content);
 }
 
 /**
