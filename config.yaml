@@ -35,8 +35,23 @@ token_usage:
 # Configure available LLM models for the agent to use
 
 models:
-  - name: zhipu-glm-4.5
-    display_name: Zhipu GLM-4.5
+  - name: financial-agent
+    display_name: Financial Agent
+    description: Financial workflow entry backed by GLM plus the FinMA expert tool.
+    use: langchain_openai:ChatOpenAI
+    model: glm-4.5
+    api_key: $ZHIPUAI_API_KEY
+    base_url: https://open.bigmodel.cn/api/paas/v4
+    request_timeout: 600.0
+    max_retries: 2
+    max_tokens: 2048
+    temperature: 0.2
+    extra_body:
+      thinking:
+        type: disabled
+  - name: glm
+    display_name: GLM
+    description: Direct GLM access without Financial Agent routing.
     use: langchain_openai:ChatOpenAI
     model: glm-4.5
     api_key: $ZHIPUAI_API_KEY
@@ -383,7 +398,7 @@ tools:
     group: finance
     use: deerflow.community.finma.tools:financial_analysis_tool
     base_url: http://127.0.0.1:8000/v1
-    model: finma-7b-nlp
+    model: finma-sentiment-v2
     api_key: $FINMA_API_KEY
 
   # Web search tool (uses DuckDuckGo, no API key required)

@@ -16,6 +16,15 @@ def _get_setting(name: str, default: str) -> str:
     return os.environ.get(name.upper(), default)
 
 
+def _get_setting_list(name: str) -> list[str]:
+    raw = _get_setting(name, "")
+    if not raw:
+        return []
+    if "," in raw:
+        return [item.strip() for item in raw.split(",") if item.strip()]
+    return [raw.strip()]
+
+
 def _mock_finma_result(task: str, ticker: str, text: str) -> dict:
     lowered = text.lower()
     negative_terms = ["fell", "weaker", "weak", "risk", "decline", "miss", "pressure", "loss", "warning", "below", "delay", "restrict", "uncertain", "elevated"]
@@ -98,6 +107,47 @@ def _mock_finma_result(task: str, ticker: str, text: str) -> dict:
     }
 
 
+def _parse_finma_content(content: str, task: str, ticker: str) -> dict:
+    label = content.strip().strip(".").lower()
+    if label in {"positive", "neutral", "negative"}:
+        return {
+            "provider": "finma",
+            "task": task,
+            "ticker": ticker or None,
+            "label": label,
+            "impact_direction": label,
+            "affected_factors": [],
+            "confidence": None,
+            "rationale": "FinMA sentiment LoRA v2 returned a label-only classification.",
+        }
+
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        return {
+            "provider": "finma",
+            "task": task,
+            "ticker": ticker or None,
+            "raw_output": content,
+            "schema_warning": "FinMA returned non-JSON text; caller should treat raw_output as unvalidated.",
+        }
+    return parsed
+
+
+def _candidate_models(task: str) -> list[str]:
+    preferred = _get_setting("model", "finma-sentiment-v2").strip()
+    fallbacks = _get_setting_list("fallback_models")
+
+    candidates: list[str] = []
+    if preferred:
+        candidates.append(preferred)
+
+    for model_name in fallbacks:
+        if model_name and model_name not in candidates:
+            candidates.append(model_name)
+    return candidates
+
+
 @tool("financial_analysis", parse_docstring=True)
 def financial_analysis_tool(
     text: str,
@@ -119,7 +169,7 @@ def financial_analysis_tool(
     """
     base_url = _get_setting("base_url", "http://127.0.0.1:8000/v1").rstrip("/")
     api_key = _get_setting("api_key", "$FINMA_API_KEY")
-    model = _get_setting("model", "finma-7b-nlp")
+    models = _candidate_models(task)
 
     trimmed_text = text[:5000]
     if use_mock:
@@ -135,37 +185,34 @@ def financial_analysis_tool(
         f"{trimmed_text}"
     )
 
-    try:
-        response = httpx.post(
-            f"{base_url}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.2,
-                "max_tokens": 256,
-            },
-            timeout=120,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        content = payload["choices"][0]["message"]["content"].strip()
+    errors: list[str] = []
+    for model in models:
         try:
-            parsed = json.loads(content)
-        except json.JSONDecodeError:
-            parsed = {
-                "provider": "finma",
-                "task": task,
-                "ticker": ticker or None,
-                "raw_output": content,
-                "schema_warning": "FinMA returned non-JSON text; caller should treat raw_output as unvalidated.",
-            }
-        return json.dumps(parsed, ensure_ascii=False)
-    except Exception as exc:
-        result = _mock_finma_result(task, ticker, trimmed_text)
-        result["provider"] = "mock_fallback"
-        result["error"] = str(exc)
-        return json.dumps(result, ensure_ascii=False)
+            response = httpx.post(
+                f"{base_url}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.2,
+                    "max_tokens": 256,
+                },
+                timeout=120,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            content = payload["choices"][0]["message"]["content"].strip()
+            parsed = _parse_finma_content(content, task, ticker)
+            if isinstance(parsed, dict):
+                parsed.setdefault("model_used", model)
+            return json.dumps(parsed, ensure_ascii=False)
+        except Exception as exc:
+            errors.append(f"{model}: {exc}")
+
+    result = _mock_finma_result(task, ticker, trimmed_text)
+    result["provider"] = "mock_fallback"
+    result["error"] = " | ".join(errors)
+    return json.dumps(result, ensure_ascii=False)

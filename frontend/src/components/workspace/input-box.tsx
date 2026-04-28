@@ -816,9 +816,6 @@ export function InputBox({
                     >
                       <div className="flex min-w-0 flex-1 flex-col">
                         <ModelSelectorName>{m.display_name}</ModelSelectorName>
-                        <span className="text-muted-foreground truncate text-[10px]">
-                          {m.model}
-                        </span>
                       </div>
                       {m.name === context.model_name ? (
                         <CheckIcon className="ml-auto size-4" />
