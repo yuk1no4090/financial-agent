@@ -5,14 +5,17 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 import deerflow.agents.middlewares.financial_routing_middleware as frm
+from deerflow.agents.memory import MemoryBundle
 from deerflow.agents.middlewares.financial_routing_middleware import (
     FinancialRoutingMiddleware,
     _build_direct_financial_answer,
     _build_pure_model_sanitized_update,
+    _build_report_skill_input,
     _current_turn_finma_candidate,
     _needs_financial_answer_rewrite,
     _route_decision,
 )
+from deerflow.agents.rag import RagBundle, RetrievedEvidence
 from deerflow.community.finma.tools import financial_analysis_tool
 
 
@@ -158,6 +161,8 @@ def test_route_decision_for_report_request_prefers_skill_glm() -> None:
     assert decision.skill_enabled is True
     assert decision.skill_name == "research-report-skill"
     assert decision.memory_enabled is False
+    assert decision.rag_enabled is True
+    assert decision.rag_source_type == "finance_docs"
 
 
 def test_route_decision_for_contextual_report_request_enables_skill_and_memory() -> None:
@@ -173,6 +178,15 @@ def test_route_decision_for_contextual_report_request_enables_skill_and_memory()
     assert decision.skill_enabled is True
     assert decision.memory_enabled is True
     assert decision.skill_name == "research-report-skill"
+    assert decision.rag_enabled is True
+
+
+def test_route_decision_for_project_doc_question_enables_rag() -> None:
+    decision = _route_decision([HumanMessage(content="Router 文档里当前有哪些路线")])
+
+    assert decision.route == "general_glm"
+    assert decision.rag_enabled is True
+    assert decision.rag_source_type == "project_docs"
 
 
 def test_route_decision_for_contextual_brief_report_request_enables_memory_and_brief_mode() -> None:
@@ -274,7 +288,7 @@ def test_financial_agent_after_model_prefixes_debug_header(monkeypatch) -> None:
 
     assert result is not None
     content = result["messages"][0].content
-    assert content.startswith("当前路由：financial_finma | memory=off | skill=off\n当前调用模型：入口=financial-agent | lead=glm-4.5 | financial_tool=finma-sentiment-v3+finma-7b-nlp | strategy=v3_and_base")
+    assert content.startswith("当前路由：financial_finma | memory=off | skill=off | rag=off\n当前调用模型：入口=financial-agent | lead=glm-4.5 | financial_tool=finma-sentiment-v3+finma-7b-nlp | strategy=v3_and_base")
     assert "如果只基于“苹果公司显示第一季度财报增长5%”这条信息来看，整体偏积极。" in content
 
 
@@ -318,7 +332,7 @@ def test_financial_agent_after_model_does_not_reuse_previous_turn_finma_payload(
 
     assert result is not None
     content = result["messages"][0].content
-    assert content.startswith("当前路由：financial_glm | memory=off | skill=off\n当前调用模型：入口=financial-agent | lead=glm-4.5 | financial_tool=none | strategy=lead_only")
+    assert content.startswith("当前路由：financial_glm | memory=off | skill=off | rag=on | rag_source=finance_docs\n当前调用模型：入口=financial-agent | lead=glm-4.5 | financial_tool=none | strategy=lead_only")
     assert "finma-sentiment-v3" not in content
     assert "v3_and_base" not in content
     assert "通常会包括苹果、微软" in content
@@ -373,7 +387,7 @@ def test_financial_agent_prefers_direct_synthesis_for_short_v3_snippet(monkeypat
 
     assert result is not None
     content = result["messages"][0].content
-    assert content.startswith("当前路由：financial_finma | memory=off | skill=off\n当前调用模型：入口=financial-agent | lead=glm-4.5 | financial_tool=finma-sentiment-v3+finma-7b-nlp | strategy=v3_and_base")
+    assert content.startswith("当前路由：financial_finma | memory=off | skill=off | rag=off\n当前调用模型：入口=financial-agent | lead=glm-4.5 | financial_tool=finma-sentiment-v3+finma-7b-nlp | strategy=v3_and_base")
     assert "如果只基于“苹果公司显示第一季度财报增长5%”这条信息来看，整体偏积极。" in content
     assert "短线情绪信号和更宽泛的基本面解读方向基本一致。" in content
     assert "股价和投资者情绪具有正面影响" not in content
@@ -400,7 +414,7 @@ def test_glm_after_model_prefixes_debug_header(monkeypatch) -> None:
 
     assert result is not None
     content = result["messages"][0].content
-    assert content.startswith("当前路由：financial_glm | memory=off | skill=off\n当前调用模型：入口=glm | lead=glm-4.5 | financial_tool=none | strategy=lead_only")
+    assert content.startswith("当前路由：financial_glm | memory=off | skill=off | rag=on | rag_source=finance_docs\n当前调用模型：入口=glm | lead=glm-4.5 | financial_tool=none | strategy=lead_only")
     assert "通常会包括 Apple" in content
 
 
@@ -507,3 +521,150 @@ async def test_awrap_model_call_runs_report_skill_directly(monkeypatch) -> None:
 
     assert isinstance(result, AIMessage)
     assert "# 供应风险报告" in result.content
+
+
+def test_build_report_skill_input_includes_explicit_memory_context(monkeypatch) -> None:
+    class FakeMemoryManager:
+        def retrieve_for_route(self, **_: object) -> MemoryBundle:
+            return MemoryBundle(
+                prior_decisions=["已确认项目主线：Router + Report Skill + Memory。"],
+                open_tasks=["下一步需要实现显式 Memory Retrieval。"],
+                source_memory_ids=["mem-1", "mem-2"],
+            )
+
+    monkeypatch.setattr(frm, "get_memory_manager", lambda: FakeMemoryManager())
+
+    messages = [
+        HumanMessage(content="分析中东战争对石油市场的影响"),
+        AIMessage(content="核心影响之一是中东供应风险可能推高风险溢价。"),
+        HumanMessage(content="针对你刚刚提到的供应风险生成一份报告"),
+    ]
+    decision = _route_decision(messages)
+
+    skill_input = _build_report_skill_input(messages, {"model_name": "financial-agent", "thread_id": "thread-1"}, decision)
+
+    assert skill_input.memory_enabled is True
+    assert skill_input.rag_enabled is True
+    assert skill_input.require_citations is True
+    assert "Router + Report Skill + Memory" in skill_input.memory_context
+    assert "显式 Memory Retrieval" in skill_input.memory_context
+
+
+def test_wrap_model_call_injects_explicit_memory_for_context_route(monkeypatch) -> None:
+    class FakeMemoryManager:
+        def retrieve_for_route(self, **_: object) -> MemoryBundle:
+            return MemoryBundle(
+                prior_decisions=["已确认项目主线：Router + Report Skill + Memory。"],
+                source_memory_ids=["mem-1"],
+            )
+
+    monkeypatch.setattr(frm, "get_memory_manager", lambda: FakeMemoryManager())
+
+    middleware = FinancialRoutingMiddleware()
+    captured_messages = {}
+    request = SimpleNamespace(
+        messages=[
+            HumanMessage(content="memory 方案怎么做"),
+            AIMessage(content="建议用 Router + Report Skill + Memory 作为主线。"),
+            HumanMessage(content="把刚刚那个方案继续展开一下"),
+        ],
+        runtime=SimpleNamespace(context={"model_name": "financial-agent", "thread_id": "thread-1"}),
+        tools=[],
+        override=lambda **kwargs: SimpleNamespace(
+            messages=kwargs.get("messages", request.messages),
+            runtime=request.runtime,
+            tools=kwargs.get("tools", request.tools),
+            override=request.override,
+        ),
+    )
+
+    def _handler(updated_request):
+        captured_messages["messages"] = updated_request.messages
+        return AIMessage(content="继续展开。")
+
+    result = middleware.wrap_model_call(request, _handler)
+
+    assert isinstance(result, AIMessage)
+    names = [getattr(message, "name", "") for message in captured_messages["messages"]]
+    assert "router_explicit_memory_context" in names
+    injected = next(message for message in captured_messages["messages"] if getattr(message, "name", "") == "router_explicit_memory_context")
+    assert "Router + Report Skill + Memory" in injected.content
+
+
+def test_wrap_model_call_injects_rag_evidence_for_project_doc_route(monkeypatch) -> None:
+    class FakeRagService:
+        def search(self, request):
+            assert request.source_type == "project_docs"
+            return RagBundle(
+                query=request.query,
+                rewritten_query=request.query,
+                evidences=[
+                    RetrievedEvidence(
+                        chunk_id="router-1",
+                        doc_id="router",
+                        title="Router 机制说明",
+                        section="总体设计",
+                        source_path="/tmp/router.md",
+                        text="Router 当前支持 financial_finma、financial_glm、general_glm、context_memory_glm 和 report_skill_glm。",
+                        score=0.91,
+                        rank=1,
+                    )
+                ],
+                summary="检索到 Router 证据。",
+                used=True,
+                source_type="project_docs",
+            )
+
+    monkeypatch.setattr(frm, "get_rag_service", lambda: FakeRagService())
+
+    middleware = FinancialRoutingMiddleware()
+    captured_messages = {}
+    request = SimpleNamespace(
+        messages=[HumanMessage(content="Router 文档里当前有哪些路线")],
+        runtime=SimpleNamespace(context={"model_name": "financial-agent", "thread_id": "thread-1"}),
+        tools=[],
+        override=lambda **kwargs: SimpleNamespace(
+            messages=kwargs.get("messages", request.messages),
+            runtime=request.runtime,
+            tools=kwargs.get("tools", request.tools),
+            override=request.override,
+        ),
+    )
+
+    def _handler(updated_request):
+        captured_messages["messages"] = updated_request.messages
+        return AIMessage(content="共有五条路线。")
+
+    result = middleware.wrap_model_call(request, _handler)
+
+    assert isinstance(result, AIMessage)
+    names = [getattr(message, "name", "") for message in captured_messages["messages"]]
+    assert "router_rag_evidence_context" in names
+    injected = next(message for message in captured_messages["messages"] if getattr(message, "name", "") == "router_rag_evidence_context")
+    assert "[E1]" in injected.content
+    assert "Router 当前支持" in injected.content
+
+
+def test_after_agent_writes_explicit_task_memory(monkeypatch) -> None:
+    captured = {}
+
+    def _fake_enqueue(**kwargs: object) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(frm, "_enqueue_explicit_task_memory_write", _fake_enqueue)
+
+    middleware = FinancialRoutingMiddleware()
+    runtime = SimpleNamespace(context={"model_name": "financial-agent", "thread_id": "thread-1", "user_id": "user-1"})
+    state = {
+        "messages": [
+            HumanMessage(content="针对刚刚的 memory 方案生成一份报告"),
+            AIMessage(content="# Memory 方案报告\n\n## 核心结论\n\n用显式检索来承接上文。"),
+        ]
+    }
+
+    middleware.after_agent(state, runtime)
+
+    assert captured["thread_id"] == "thread-1"
+    assert captured["user_id"] == "user-1"
+    assert captured["route"] == "report_skill_glm"
+    assert "显式检索" in captured["answer"]

@@ -43,7 +43,7 @@ export const zhCN: Translations = {
     cancel: "取消",
     save: "保存",
     install: "安装",
-    create: "创建",
+    create: "Create",
     import: "导入",
     export: "导出",
     exportAsMarkdown: "导出为 Markdown",
@@ -59,9 +59,9 @@ export const zhCN: Translations = {
 
   // Welcome
   welcome: {
-    greeting: "金融分析工作台",
+    greeting: "Financial Analysis Desk",
     description:
-      "你可以让 FinAgent 做财报分析、估值备忘录、同业比较、风险审查和市场简报。\n它会把工具、Skills 和子智能体组织起来，生成带来源依据的投研结论。",
+      "Ask for earnings analysis, valuation work, risk review, peer comparison or market briefs.\nFinAgent coordinates tools, skills and sub-agents into source-backed investment research.",
 
     createYourOwnSkill: "创建你自己的 Agent SKill",
     createYourOwnSkillDescription:
@@ -78,12 +78,13 @@ export const zhCN: Translations = {
 
   // Input Box
   inputBox: {
-    placeholder: "输入财报分析、估值备忘录、同业比较或风险审查任务...",
+    placeholder:
+      "Ask for an earnings review, valuation memo, peer comparison or risk analysis...",
     createSkillPrompt:
       "我们一起用 skill-creator 技能来创建一个技能吧。先问问我希望这个技能能做什么。",
     addAttachments: "添加附件",
     mode: "模式",
-    flashMode: "闪速",
+    flashMode: "Flash",
     flashModeDescription: "快速且高效的完成任务，但可能不够精准",
     reasoningMode: "思考",
     reasoningModeDescription: "思考后再行动，在时间与准确性之间取得平衡",
@@ -102,7 +103,7 @@ export const zhCN: Translations = {
     reasoningEffortHigh: "高",
     reasoningEffortHighDescription: "全维度逻辑推演 + 多路径验证 + 反推校验",
     searchModels: "搜索模型...",
-    surpriseMe: "市场简报",
+    surpriseMe: "Market brief",
     surpriseMePrompt:
       "生成一份本周科技股重要异动的市场简报，覆盖催化因素、风险和后续观察点。",
     followupLoading: "正在生成可能的后续问题...",
@@ -112,25 +113,25 @@ export const zhCN: Translations = {
     followupConfirmReplace: "替换并发送",
     suggestions: [
       {
-        suggestion: "财报",
+        suggestion: "Earnings",
         prompt:
           "分析 [股票代码] 最新财报，覆盖收入驱动、毛利率变化、现金流、指引、催化因素、风险和引用来源。",
         icon: FileSearchIcon,
       },
       {
-        suggestion: "估值",
+        suggestion: "Valuation",
         prompt:
           "为 [股票代码] 生成估值备忘录，比较估值倍数、增长、盈利能力、资产负债质量和关键假设。",
         icon: ScaleIcon,
       },
       {
-        suggestion: "同业比较",
+        suggestion: "Peer comparison",
         prompt:
           "比较 [股票A] 和 [股票B] 的增长、利润率、估值、竞争地位、催化因素和风险。",
         icon: LineChartIcon,
       },
       {
-        suggestion: "风险",
+        suggestion: "Risk",
         prompt:
           "审查 [股票代码] 的主要投资风险，包括会计、流动性、监管、竞争和宏观敏感性。",
         icon: MicroscopeIcon,
@@ -169,9 +170,9 @@ export const zhCN: Translations = {
 
   // Sidebar
   sidebar: {
-    newChat: "新对话",
-    chats: "对话",
-    recentChats: "最近的对话",
+    newChat: "New chat",
+    chats: "Chats",
+    recentChats: "Recent chats",
     demoChats: "演示对话",
     agents: "智能体",
   },
@@ -227,7 +228,7 @@ export const zhCN: Translations = {
   workspace: {
     officialWebsite: "访问 DeerFlow 官方网站",
     githubTooltip: "访问 DeerFlow 的 Github 仓库",
-    settingsAndMore: "设置和更多",
+    settingsAndMore: "Settings and more",
     visitGithub: "在 Github 上查看 DeerFlow",
     reportIssue: "报告问题",
     contactUs: "联系我们",

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import atexit
+import concurrent.futures
 import json
 import logging
 import re
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import override
 
 from langchain.agents import AgentState
@@ -18,10 +20,18 @@ from langgraph.prebuilt.tool_node import ToolCallRequest
 from langgraph.runtime import Runtime
 from langgraph.types import Command
 
+from deerflow.agents.memory import get_memory_data, get_memory_manager
+from deerflow.agents.rag import RagSearchRequest, get_rag_service
 from deerflow.agents.skills import ReportSkillInput, ResearchReportSkill
 from deerflow.config import get_app_config
 
 logger = logging.getLogger(__name__)
+
+_EXPLICIT_TASK_MEMORY_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=2,
+    thread_name_prefix="explicit-task-memory",
+)
+atexit.register(lambda: _EXPLICIT_TASK_MEMORY_EXECUTOR.shutdown(wait=False))
 
 _FINANCIAL_AGENT_MODEL_NAMES = {"financial-agent", "agent-router"}
 _PURE_MODEL_NAMES = {"glm"}
@@ -403,6 +413,58 @@ _BRIEF_REPORT_TERMS = {
     "concise",
     "summary",
 }
+_RAG_TRIGGER_TERMS = {
+    "基于资料",
+    "根据资料",
+    "根据文档",
+    "基于文档",
+    "项目文档",
+    "知识库",
+    "引用",
+    "来源",
+    "证据",
+    "readme",
+    "pdf",
+    "年报",
+    "财报",
+    "新闻",
+    "论文",
+    "数据集",
+    "材料",
+    "资料",
+    "原文",
+    "出处",
+}
+_PROJECT_DOC_TERMS = {
+    "router",
+    "report skill",
+    "report_skill",
+    "memory",
+    "rag",
+    "skill",
+    "项目",
+    "文档",
+    "readme",
+    "设计",
+    "方案",
+    "模块",
+}
+_FINANCE_DOC_TERMS = {
+    "财报",
+    "年报",
+    "公告",
+    "新闻",
+    "行业",
+    "政策",
+    "市场数据",
+    "company",
+    "industry",
+    "filing",
+    "earnings",
+    "report",
+    "news",
+}
+_EVAL_DOC_TERMS = {"评估", "实验", "eval", "benchmark", "ab test", "对比实验"}
 _REPORT_REQUEST_RES = (
     re.compile(r"(生成|写|做|整理|输出|起草|准备).{0,8}(研究报告|分析报告|报告|研报)"),
     re.compile(r"(write|generate|create|draft|prepare|turn).{0,16}(research report|analysis report|report|memo|briefing|white paper|deep dive)", re.IGNORECASE),
@@ -456,7 +518,7 @@ _MEMORY_GLM_ROUTE_GUIDE = (
     "Router route context_memory_glm is active for this turn.\n"
     "- This looks like a multi-turn follow-up that depends on earlier context.\n"
     "- Resolve references like 'that', 'it', '刚才', or '上面' against the latest relevant turn before answering.\n"
-    "- A future memory retrieval hook may be attached here. For now, rely on visible thread history only.\n"
+    "- If Relevant Memory is attached below, use it as supporting context instead of restarting from zero.\n"
     "- If the user is asking to expand one subsection from a previous answer or report, continue that topic directly instead of restarting a brand-new full report.\n"
     "- Answer directly in the user's language and do not mention hidden routing.\n"
     "</system_reminder>"
@@ -552,6 +614,11 @@ class RouteDecision:
     skill_enabled: bool = False
     skill_name: str | None = None
     brief_report: bool = False
+    rag_enabled: bool = False
+    rag_query: str | None = None
+    rag_source_type: str = "auto"
+    rag_top_k: int = 5
+    rag_reason: str | None = None
 
 
 _PSEUDO_TOOL_RE = re.compile(
@@ -598,6 +665,11 @@ def _latest_user_message(messages: list[object]) -> tuple[int, HumanMessage] | N
 
 def _normalized_text(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
+
+
+def _contains_any_term(text: str, terms: set[str]) -> bool:
+    lowered = text.lower()
+    return any(term in lowered or term in text for term in terms)
 
 
 def _is_finance_query(text: str) -> bool:
@@ -750,6 +822,96 @@ def _is_context_follow_up(messages: list[object], latest_idx: int, text: str) ->
     return False
 
 
+def _infer_rag_source_type(query: str, route: str, *, financial_question: bool) -> str:
+    normalized = _normalized_text(query)
+    if _contains_any_term(normalized, _EVAL_DOC_TERMS):
+        return "eval_docs"
+    if _contains_any_term(normalized, _PROJECT_DOC_TERMS):
+        return "project_docs"
+    if financial_question or _contains_any_term(normalized, _FINANCE_DOC_TERMS):
+        return "finance_docs"
+    if route in {_ROUTE_CONTEXT_MEMORY_GLM, _ROUTE_REPORT_SKILL_GLM}:
+        return "project_docs"
+    return "auto"
+
+
+def _default_rag_top_k(route: str) -> int:
+    if route == _ROUTE_FINANCIAL_GLM:
+        return 4
+    return 5
+
+
+def _build_rag_seed_query(messages: list[object], latest_idx: int, query: str, route: str) -> str:
+    if route not in {_ROUTE_CONTEXT_MEMORY_GLM, _ROUTE_REPORT_SKILL_GLM}:
+        return query
+    conversation_context = _build_report_conversation_context(messages, latest_idx)
+    if not conversation_context:
+        return query
+    return f"{query}\n{conversation_context}"
+
+
+def _needs_rag(
+    query: str,
+    route: str,
+    *,
+    financial_question: bool,
+    context_follow_up: bool,
+    explicit_context_reference: bool,
+) -> tuple[bool, str | None]:
+    normalized = _normalized_text(query)
+    explicit_evidence_request = _contains_any_term(normalized, _RAG_TRIGGER_TERMS)
+    project_doc_request = _contains_any_term(normalized, _PROJECT_DOC_TERMS)
+    finance_doc_request = _contains_any_term(normalized, _FINANCE_DOC_TERMS)
+    eval_doc_request = _contains_any_term(normalized, _EVAL_DOC_TERMS)
+
+    if route == _ROUTE_FINANCIAL_FINMA:
+        return False, None
+    if explicit_evidence_request or eval_doc_request:
+        return True, "explicit_document_or_evidence_request"
+    if route == _ROUTE_REPORT_SKILL_GLM and (project_doc_request or finance_doc_request or financial_question):
+        return True, "report_requires_evidence"
+    if route == _ROUTE_CONTEXT_MEMORY_GLM and (project_doc_request or finance_doc_request):
+        return True, "follow_up_requires_evidence"
+    if route == _ROUTE_FINANCIAL_GLM and (finance_doc_request or financial_question):
+        return True, "financial_question_requires_evidence"
+    if route == _ROUTE_GENERAL_GLM and project_doc_request:
+        return True, "project_document_question"
+    return False, None
+
+
+def _enrich_route_decision_with_rag(
+    messages: list[object],
+    latest_idx: int,
+    query: str,
+    decision: RouteDecision,
+    *,
+    context_follow_up: bool,
+    explicit_context_reference: bool,
+) -> RouteDecision:
+    rag_enabled, rag_reason = _needs_rag(
+        query,
+        decision.route,
+        financial_question=decision.financial_question,
+        context_follow_up=context_follow_up,
+        explicit_context_reference=explicit_context_reference,
+    )
+    if not rag_enabled:
+        return decision
+
+    return replace(
+        decision,
+        rag_enabled=True,
+        rag_query=_build_rag_seed_query(messages, latest_idx, query, decision.route),
+        rag_source_type=_infer_rag_source_type(
+            query,
+            decision.route,
+            financial_question=decision.financial_question,
+        ),
+        rag_top_k=_default_rag_top_k(decision.route),
+        rag_reason=rag_reason,
+    )
+
+
 def _route_decision(messages: list[object], runtime_context: dict | None = None) -> RouteDecision:
     latest = _latest_user_message(messages)
     if latest is None:
@@ -768,22 +930,39 @@ def _route_decision(messages: list[object], runtime_context: dict | None = None)
 
     if _is_report_request(normalized):
         report_uses_context = context_follow_up or explicit_context_reference
-        return RouteDecision(
+        report_financial_question = _is_finance_query(normalized) or _is_finance_query(_build_report_conversation_context(messages, latest_idx))
+        decision = RouteDecision(
             route=_ROUTE_REPORT_SKILL_GLM,
             reason="report_request_with_context" if report_uses_context else "report_request",
-            financial_question=_is_finance_query(normalized),
+            financial_question=report_financial_question,
             memory_enabled=report_uses_context,
             skill_enabled=True,
             skill_name=_REPORT_SKILL_NAME,
             brief_report=brief_report,
         )
+        return _enrich_route_decision_with_rag(
+            messages,
+            latest_idx,
+            normalized,
+            decision,
+            context_follow_up=context_follow_up,
+            explicit_context_reference=explicit_context_reference,
+        )
 
     if context_follow_up:
-        return RouteDecision(
+        decision = RouteDecision(
             route=_ROUTE_CONTEXT_MEMORY_GLM,
             reason="context_follow_up",
             financial_question=_is_finance_query(normalized),
             memory_enabled=True,
+        )
+        return _enrich_route_decision_with_rag(
+            messages,
+            latest_idx,
+            normalized,
+            decision,
+            context_follow_up=context_follow_up,
+            explicit_context_reference=explicit_context_reference,
         )
 
     financial_question = _is_finance_query(normalized)
@@ -802,13 +981,29 @@ def _route_decision(messages: list[object], runtime_context: dict | None = None)
         )
 
     if financial_question:
-        return RouteDecision(
+        decision = RouteDecision(
             route=_ROUTE_FINANCIAL_GLM,
             reason="financial_direct",
             financial_question=True,
         )
+        return _enrich_route_decision_with_rag(
+            messages,
+            latest_idx,
+            normalized,
+            decision,
+            context_follow_up=context_follow_up,
+            explicit_context_reference=explicit_context_reference,
+        )
 
-    return RouteDecision(route=_ROUTE_GENERAL_GLM, reason="general_direct")
+    decision = RouteDecision(route=_ROUTE_GENERAL_GLM, reason="general_direct")
+    return _enrich_route_decision_with_rag(
+        messages,
+        latest_idx,
+        normalized,
+        decision,
+        context_follow_up=context_follow_up,
+        explicit_context_reference=explicit_context_reference,
+    )
 
 
 def _already_routed_since(messages: list[object], start_idx: int) -> bool:
@@ -1004,8 +1199,11 @@ def _build_model_debug_header(runtime_context: dict | None, messages: list[objec
     route_parts = [f"{_DEBUG_ROUTE_PREFIX}{route.route}"]
     route_parts.append(f"memory={'on' if route.memory_enabled else 'off'}")
     route_parts.append(f"skill={'on' if route.skill_enabled else 'off'}")
+    route_parts.append(f"rag={'on' if route.rag_enabled else 'off'}")
     if route.skill_name:
         route_parts.append(f"skill_name={route.skill_name}")
+    if route.rag_enabled:
+        route_parts.append(f"rag_source={route.rag_source_type}")
     parts = [f"{_DEBUG_MODEL_PREFIX}入口={logical_model_name}"]
 
     lead_model = _lead_model_target(logical_model_name)
@@ -1064,18 +1262,50 @@ def _build_report_conversation_context(messages: list[object], latest_idx: int) 
     return "\n".join(entries[-6:])
 
 
-def _build_report_memory_context(decision: RouteDecision) -> str:
+def _clip_memory_text(text: str, *, max_chars: int = 1200) -> str:
+    cleaned = text.strip()
+    if len(cleaned) <= max_chars:
+        return cleaned
+    return f"{cleaned[: max_chars - 1].rstrip()}..."
+
+
+def _build_explicit_memory_text(messages: list[object], runtime_context: dict | None, decision: RouteDecision) -> str:
+    latest = _latest_user_message(messages)
+    if latest is None:
+        return ""
+
+    latest_idx, latest_msg = latest
+    user_query = _message_to_text(latest_msg.content).strip()
+    if not user_query:
+        return ""
+
+    conversation_context = _build_report_conversation_context(messages, latest_idx)
+    seed_query = user_query if not conversation_context else f"{user_query}\n{conversation_context}"
+    bundle = get_memory_manager().retrieve_for_route(
+        query=seed_query,
+        route=decision.route,
+        skill_name=decision.skill_name,
+        thread_id=str((runtime_context or {}).get("thread_id") or "") or None,
+        memory_enabled=decision.memory_enabled,
+    )
+    return _clip_memory_text(bundle.to_prompt_text(), max_chars=1200)
+
+
+def _build_report_memory_context(messages: list[object], runtime_context: dict | None, decision: RouteDecision) -> str:
+    explicit_memory = _build_explicit_memory_text(messages, runtime_context, decision)
+    if explicit_memory:
+        return explicit_memory
     if not decision.memory_enabled:
         return ""
     try:
-        from deerflow.agents.memory import format_memory_for_injection, get_memory_data
+        from deerflow.agents.memory import format_memory_for_injection
         from deerflow.config.memory_config import get_memory_config
 
         config = get_memory_config()
         if not config.enabled or not config.injection_enabled:
             return ""
         memory_data = get_memory_data()
-        return format_memory_for_injection(memory_data, max_tokens=min(config.max_injection_tokens, 600))
+        return _clip_memory_text(format_memory_for_injection(memory_data, max_tokens=min(config.max_injection_tokens, 600)), max_chars=1200)
     except Exception:
         logger.exception("Failed to build report skill memory context")
         return ""
@@ -1102,8 +1332,13 @@ def _build_report_skill_input(messages: list[object], runtime_context: dict | No
         language=language,
         brief_report=decision.brief_report,
         memory_enabled=decision.memory_enabled,
+        rag_enabled=decision.rag_enabled,
         conversation_context=_build_report_conversation_context(messages, latest_idx),
-        memory_context=_build_report_memory_context(decision),
+        memory_context=_build_report_memory_context(messages, runtime_context, decision),
+        rag_query=decision.rag_query,
+        rag_source_type=decision.rag_source_type,
+        rag_top_k=decision.rag_top_k,
+        require_citations=decision.rag_enabled,
         report_type=report_type,
         audience="student_project",
         constraints=constraints,
@@ -1281,6 +1516,52 @@ def _route_instruction(decision: RouteDecision) -> HumanMessage:
     return HumanMessage(name=name, content=content)
 
 
+def _build_router_rag_bundle(messages: list[object], runtime_context: dict | None, decision: RouteDecision):
+    latest = _latest_user_message(messages)
+    if latest is None or not decision.rag_enabled:
+        return None
+
+    latest_idx, latest_msg = latest
+    user_query = _message_to_text(latest_msg.content).strip()
+    if not user_query:
+        return None
+
+    conversation_context = _build_report_conversation_context(messages, latest_idx)
+    memory_context = _build_report_memory_context(messages, runtime_context, decision)
+    return get_rag_service().search(
+        RagSearchRequest(
+            query=decision.rag_query or user_query,
+            route=decision.route,
+            source_type=decision.rag_source_type,
+            top_k=decision.rag_top_k,
+            memory_context=memory_context,
+            conversation_context=conversation_context,
+        )
+    )
+
+
+def _build_router_rag_message(bundle, decision: RouteDecision) -> HumanMessage:
+    if bundle is not None and bundle.used:
+        content = (
+            "<system_reminder>\n"
+            "Relevant document evidence was retrieved for this turn.\n"
+            "- Use the evidence below when it helps answer the current question.\n"
+            "- Do not reveal internal chunk ids, scores, or retrieval metadata.\n\n"
+            f"{bundle.to_prompt_text()}\n"
+            "</system_reminder>"
+        )
+        return HumanMessage(name="router_rag_evidence_context", content=content)
+
+    content = (
+        "<system_reminder>\n"
+        "RAG was enabled for this turn, but no reliable supporting evidence was retrieved.\n"
+        "- Do not invent citations, exact figures, or unsupported factual claims.\n"
+        "- If the user explicitly asks for sources or documentary support, say the current evidence is insufficient.\n"
+        "</system_reminder>"
+    )
+    return HumanMessage(name="router_rag_evidence_miss", content=content)
+
+
 def _augment_request_for_pure_model(request: ModelRequest) -> ModelRequest:
     return _with_instruction(
         request,
@@ -1296,7 +1577,48 @@ def _augment_request_for_financial_agent_direct(request: ModelRequest) -> ModelR
 
 
 def _augment_request_for_router_direct(request: ModelRequest, decision: RouteDecision) -> ModelRequest:
-    return _with_instruction(request, _route_instruction(decision))
+    instructions = [*request.messages, _route_instruction(decision)]
+    memory_text = _build_explicit_memory_text(request.messages, request.runtime.context, decision)
+    if memory_text:
+        instructions.append(
+            HumanMessage(
+                name="router_explicit_memory_context",
+                content=(
+                    "<system_reminder>\n"
+                    "Relevant task memory was retrieved for this turn.\n"
+                    "- Use the memory below only when it helps resolve the current follow-up.\n"
+                    "- If it conflicts with the latest user request, follow the latest user request.\n\n"
+                    f"{memory_text}\n"
+                    "</system_reminder>"
+                ),
+            )
+        )
+    if decision.rag_enabled:
+        bundle = _build_router_rag_bundle(request.messages, request.runtime.context, decision)
+        instructions.append(_build_router_rag_message(bundle, decision))
+    return request.override(messages=instructions)
+
+
+def _enqueue_explicit_task_memory_write(*, query: str, answer: str, route: str, skill_name: str | None, thread_id: str | None, user_id: str | None) -> None:
+    def _write() -> None:
+        get_memory_manager().write_after_response(
+            query=query,
+            answer=answer,
+            route=route,
+            skill_name=skill_name,
+            thread_id=thread_id,
+            user_id=user_id,
+        )
+
+    future = _EXPLICIT_TASK_MEMORY_EXECUTOR.submit(_write)
+
+    def _log_failure(completed: concurrent.futures.Future[None]) -> None:
+        try:
+            completed.result()
+        except Exception:
+            logger.exception("Failed to write explicit task memory after response")
+
+    future.add_done_callback(_log_failure)
 
 
 def _build_finma_synthesis_instruction(messages: list[object]) -> HumanMessage:
@@ -1644,6 +1966,34 @@ class FinancialRoutingMiddleware(AgentMiddleware[AgentState]):
         return request
 
     def before_model(self, state: AgentState, runtime: Runtime) -> dict | None:
+        return None
+
+    @override
+    def after_agent(self, state: AgentState, runtime: Runtime) -> dict | None:
+        model_name = (runtime.context or {}).get("model_name")
+        if not (_is_financial_agent_model(model_name) or _is_pure_model(model_name)):
+            return None
+
+        messages = state.get("messages") or []
+        latest = _latest_user_message(messages)
+        last_ai = _latest_visible_ai_message(messages)
+        if latest is None or last_ai is None:
+            return None
+
+        query = _message_to_text(latest[1].content).strip()
+        answer = _strip_debug_prefix_lines(_message_to_text(last_ai.content)).strip()
+        if not query or not answer:
+            return None
+
+        decision = _route_decision(messages, runtime.context)
+        _enqueue_explicit_task_memory_write(
+            query=query,
+            answer=answer,
+            route=decision.route,
+            skill_name=decision.skill_name,
+            thread_id=str((runtime.context or {}).get("thread_id") or "") or None,
+            user_id=str((runtime.context or {}).get("user_id") or "") or None,
+        )
         return None
 
     def _build_forced_tool_call(self, request: ModelRequest) -> AIMessage | None:

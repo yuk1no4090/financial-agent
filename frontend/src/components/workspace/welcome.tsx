@@ -55,24 +55,12 @@ export function Welcome({
         )}
       </div>
       {searchParams.get("mode") === "skill" ? (
-        <div className="text-muted-foreground text-sm">
-          {t.welcome.createYourOwnSkillDescription.includes("\n") ? (
-            <pre className="font-sans whitespace-pre">
-              {t.welcome.createYourOwnSkillDescription}
-            </pre>
-          ) : (
-            <p>{t.welcome.createYourOwnSkillDescription}</p>
-          )}
+        <div className="text-muted-foreground mx-auto w-full max-w-(--container-width-sm) text-center text-sm leading-relaxed">
+          <p>{t.welcome.createYourOwnSkillDescription.replace(/\n+/g, " ")}</p>
         </div>
       ) : (
-        <div className="text-muted-foreground text-sm">
-          {t.welcome.description.includes("\n") ? (
-            <pre className="font-sans whitespace-pre">
-              {t.welcome.description}
-            </pre>
-          ) : (
-            <p>{t.welcome.description}</p>
-          )}
+        <div className="text-muted-foreground mx-auto w-full max-w-(--container-width-sm) text-center text-sm leading-relaxed">
+          <p>{t.welcome.description.replace(/\n+/g, " ")}</p>
         </div>
       )}
     </div>

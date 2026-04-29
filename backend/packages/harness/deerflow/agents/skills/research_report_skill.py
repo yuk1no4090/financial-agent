@@ -7,6 +7,7 @@ import re
 from dataclasses import replace
 from typing import Any
 
+from deerflow.agents.rag import RagSearchRequest, RagService, get_rag_service
 from deerflow.models import create_chat_model
 
 from .research_report_prompt import (
@@ -81,6 +82,7 @@ _INLINE_JSON_RE = re.compile(r"(\{[\s\S]*\})")
 _SYSTEM_REMINDER_BLOCK_RE = re.compile(r"<system_reminder>[\s\S]*?</system_reminder>", re.IGNORECASE)
 _UPPER_TICKER_RE = re.compile(r"\b[A-Z]{2,5}\b")
 _CHINESE_RE = re.compile(r"[\u4e00-\u9fff]")
+_CITATION_RE = re.compile(r"\[E\d+\]")
 
 
 def _contains_chinese(text: str) -> bool:
@@ -204,10 +206,12 @@ class ResearchReportSkill:
         *,
         llm: Any | None = None,
         financial_signal_provider: Any | None = None,
+        rag_service: RagService | None = None,
     ) -> None:
         self.model_name = model_name
         self._llm = llm
         self._financial_signal_provider = financial_signal_provider
+        self._rag_service = rag_service
 
     def _get_llm(self) -> Any:
         if self._llm is None:
@@ -221,6 +225,11 @@ class ResearchReportSkill:
     async def _ainvoke_model(self, prompt: str, *, run_name: str) -> str:
         response = await self._get_llm().ainvoke(prompt, config={"run_name": run_name})
         return _sanitize_internal_text(str(getattr(response, "content", "") or ""))
+
+    def _get_rag_service(self) -> RagService:
+        if self._rag_service is None:
+            self._rag_service = get_rag_service()
+        return self._rag_service
 
     def _extract_topic_from_query(self, user_query: str) -> str:
         normalized = _normalized_text(user_query)
@@ -274,7 +283,10 @@ class ResearchReportSkill:
 
         missing_information: list[str] = []
         if not skill_input.retrieved_context:
-            missing_information.append("当前没有额外检索证据，报告应避免编造精确数字。")
+            if skill_input.rag_enabled:
+                missing_information.append("RAG 已启用但当前没有检索到可用证据，报告应明确说明证据不足。")
+            else:
+                missing_information.append("当前没有额外检索证据，报告应避免编造精确数字。")
         if not memory_text and skill_input.memory_enabled:
             missing_information.append("当前没有显式 memory 摘要，优先依赖当前线程上下文。")
 
@@ -286,10 +298,50 @@ class ResearchReportSkill:
             "missing_information": missing_information,
         }
 
+    def _resolve_rag_bundle_sync(self, skill_input: ReportSkillInput, topic: str) -> Any:
+        if not skill_input.rag_enabled:
+            return skill_input.rag_bundle
+        if skill_input.rag_bundle is not None:
+            return skill_input.rag_bundle
+        request = RagSearchRequest(
+            query=skill_input.rag_query or skill_input.user_query,
+            route="report_skill_glm",
+            source_type=skill_input.rag_source_type,
+            top_k=skill_input.rag_top_k,
+            memory_context=skill_input.memory_context,
+            conversation_context=skill_input.conversation_context,
+            report_topic=topic,
+            require_citations=skill_input.require_citations,
+        )
+        return self._get_rag_service().search(request)
+
+    async def _resolve_rag_bundle(self, skill_input: ReportSkillInput, topic: str) -> Any:
+        if not skill_input.rag_enabled:
+            return skill_input.rag_bundle
+        if skill_input.rag_bundle is not None:
+            return skill_input.rag_bundle
+        request = RagSearchRequest(
+            query=skill_input.rag_query or skill_input.user_query,
+            route="report_skill_glm",
+            source_type=skill_input.rag_source_type,
+            top_k=skill_input.rag_top_k,
+            memory_context=skill_input.memory_context,
+            conversation_context=skill_input.conversation_context,
+            report_topic=topic,
+            require_citations=skill_input.require_citations,
+        )
+        return await asyncio.to_thread(self._get_rag_service().search, request)
+
     async def retrieve_evidence(self, skill_input: ReportSkillInput, topic: str) -> list[dict[str, Any]]:
+        if skill_input.rag_enabled and not skill_input.retrieved_context:
+            bundle = await self._resolve_rag_bundle(skill_input, topic)
+            return bundle.to_context_records() if bundle and bundle.used else []
         return list(skill_input.retrieved_context)
 
     def retrieve_evidence_sync(self, skill_input: ReportSkillInput, topic: str) -> list[dict[str, Any]]:
+        if skill_input.rag_enabled and not skill_input.retrieved_context:
+            bundle = self._resolve_rag_bundle_sync(skill_input, topic)
+            return bundle.to_context_records() if bundle and bundle.used else []
         return list(skill_input.retrieved_context)
 
     def _should_use_financial_signal(self, skill_input: ReportSkillInput, topic: str) -> bool:
@@ -525,6 +577,24 @@ class ResearchReportSkill:
             context_consistent = False
             issues.append("报告没有明显承接当前主题或上文焦点。")
 
+        if skill_input.require_citations and skill_input.retrieved_context:
+            citation_count = len(_CITATION_RE.findall(cleaned))
+            if citation_count < 2:
+                issues.append("报告缺少足够的证据引用标记。")
+
+        if skill_input.rag_enabled and not skill_input.retrieved_context:
+            uncertainty_markers = (
+                "证据不足",
+                "资料不足",
+                "需要进一步验证",
+                "仍需补充资料",
+                "insufficient evidence",
+                "need more evidence",
+                "requires further validation",
+            )
+            if not any(marker in cleaned.lower() or marker in cleaned for marker in uncertainty_markers):
+                issues.append("证据不足时没有明确说明限制。")
+
         needs_rewrite = bool(issues)
         return ReportReview(
             format_complete=not missing_sections and cleaned.startswith("#"),
@@ -583,9 +653,15 @@ class ResearchReportSkill:
     def run_sync(self, skill_input: ReportSkillInput) -> ReportSkillOutput:
         topic = self.extract_topic(skill_input)
         prepared_input = replace(skill_input, topic=topic)
+        rag_bundle = self._resolve_rag_bundle_sync(prepared_input, topic)
+        retrieved_context = self.retrieve_evidence_sync(prepared_input, topic)
+        prepared_input = replace(
+            prepared_input,
+            rag_bundle=rag_bundle,
+            retrieved_context=retrieved_context,
+        )
         context_bundle = self.build_context(prepared_input, topic)
         context_summary = json.dumps(context_bundle, ensure_ascii=False, indent=2)
-        retrieved_context = self.retrieve_evidence_sync(prepared_input, topic)
         financial_signal = self.analyze_financial_signal(prepared_input, topic)
         outline = self.plan_report(
             prepared_input,
@@ -628,9 +704,15 @@ class ResearchReportSkill:
     async def run(self, skill_input: ReportSkillInput) -> ReportSkillOutput:
         topic = self.extract_topic(skill_input)
         prepared_input = replace(skill_input, topic=topic)
+        rag_bundle = await self._resolve_rag_bundle(prepared_input, topic)
+        retrieved_context = await self.retrieve_evidence(prepared_input, topic)
+        prepared_input = replace(
+            prepared_input,
+            rag_bundle=rag_bundle,
+            retrieved_context=retrieved_context,
+        )
         context_bundle = self.build_context(prepared_input, topic)
         context_summary = json.dumps(context_bundle, ensure_ascii=False, indent=2)
-        retrieved_context = await self.retrieve_evidence(prepared_input, topic)
         financial_signal = await self.aanalyze_financial_signal(prepared_input, topic)
         outline = await self.aplan_report(
             prepared_input,

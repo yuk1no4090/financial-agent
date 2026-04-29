@@ -49,6 +49,9 @@ def build_writer_prompt(
     financial_signal: dict | None,
 ) -> str:
     brief_hint = "控制在 400-800 字左右，结构紧凑。" if skill_input.brief_report else "控制在 1200-2000 字左右，保证结构完整。"
+    citation_rules = "- 优先使用 Evidence Context 中的信息。\n- 不要编造证据中没有的年份、数字、排名、公司结论或引用。\n- 如果证据不足，请在风险或限制部分明确说明。\n- 可以使用 [E1] [E2] 这样的内部引用标记。\n"
+    if skill_input.require_citations and retrieved_context:
+        citation_rules += "- 关键结论至少引用 2 处证据，并在对应段落中显式标注 [E#]。\n"
     return (
         "你是一个报告生成器。请根据以下输入生成结构化 Markdown 报告。\n"
         "不要输出任何内部调试信息，不要提到 Router、Skill、Memory、model_strategy、financial_tool、tool call 或 JSON。\n"
@@ -66,6 +69,7 @@ def build_writer_prompt(
         "- 如果是依赖上文的报告，必须承接上下文中的主题和前提。\n"
         f"- {brief_hint}\n"
         "- 语言与用户保持一致。\n"
+        f"{citation_rules}"
     )
 
 
@@ -77,6 +81,7 @@ def build_rewrite_prompt(
     report_markdown: str,
     issues: list[str],
 ) -> str:
+    citation_hint = "- 如果当前报告基于检索证据，保留或补上 [E#] 引用标记。\n" if skill_input.require_citations else ""
     return (
         "你需要重写下面这份报告，使其满足格式和质量要求。\n"
         "只返回最终 Markdown，不要解释。\n"
@@ -91,4 +96,5 @@ def build_rewrite_prompt(
         "- 修复缺失章节或内部信息泄漏。\n"
         "- 保持 Markdown 结构。\n"
         "- 语言与用户保持一致。\n"
+        f"{citation_hint}"
     )

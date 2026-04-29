@@ -6,6 +6,9 @@ This module provides a global memory mechanism that:
 - Injects relevant memory into system prompts for personalized responses
 """
 
+from deerflow.agents.memory.memory_manager import MemoryManager, get_memory_manager
+from deerflow.agents.memory.memory_schema import MemoryBundle, MemoryQuery, MemoryRecord, MemoryWriteCandidate, MemoryWriteDecision
+from deerflow.agents.memory.memory_store import MemoryRecordStore, get_memory_record_store
 from deerflow.agents.memory.prompt import (
     FACT_EXTRACTION_PROMPT,
     MEMORY_UPDATE_PROMPT,
@@ -38,6 +41,15 @@ __all__ = [
     "FACT_EXTRACTION_PROMPT",
     "format_memory_for_injection",
     "format_conversation_for_update",
+    "MemoryRecord",
+    "MemoryQuery",
+    "MemoryBundle",
+    "MemoryWriteCandidate",
+    "MemoryWriteDecision",
+    "MemoryRecordStore",
+    "get_memory_record_store",
+    "MemoryManager",
+    "get_memory_manager",
     # Queue
     "ConversationContext",
     "MemoryUpdateQueue",

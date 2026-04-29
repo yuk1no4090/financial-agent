@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from deerflow.agents.rag import RagBundle
+
 
 @dataclass
 class ReportSkillInput:
@@ -11,8 +13,14 @@ class ReportSkillInput:
     language: str = "zh"
     brief_report: bool = False
     memory_enabled: bool = False
+    rag_enabled: bool = False
     conversation_context: str = ""
     memory_context: str = ""
+    rag_query: str | None = None
+    rag_source_type: str = "auto"
+    rag_top_k: int = 5
+    rag_bundle: RagBundle | None = None
+    require_citations: bool = False
     retrieved_context: list[dict[str, Any]] = field(default_factory=list)
     financial_signal: dict[str, Any] | None = None
     report_type: str = "general_report"

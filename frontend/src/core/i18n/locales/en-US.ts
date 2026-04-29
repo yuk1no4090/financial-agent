@@ -59,7 +59,7 @@ export const enUS: Translations = {
 
   // Welcome
   welcome: {
-    greeting: "Financial analysis desk",
+    greeting: "Financial Analysis Desk",
     description:
       "Ask for earnings analysis, valuation work, risk review, peer comparison or market briefs. FinAgent coordinates tools, skills and sub-agents into source-backed investment research.",
 
