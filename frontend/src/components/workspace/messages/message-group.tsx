@@ -56,6 +56,9 @@ export function MessageGroup({
     env.NEXT_PUBLIC_STATIC_WEBSITE_ONLY === "true",
   );
   const steps = useMemo(() => convertToSteps(messages), [messages]);
+  if (steps.length === 0) {
+    return null;
+  }
   const lastToolCallStep = useMemo(() => {
     const filteredSteps = steps.filter((step) => step.type === "toolCall");
     return filteredSteps[filteredSteps.length - 1];
@@ -456,7 +459,10 @@ function convertToSteps(messages: Message[]): CoTStep[] {
         steps.push(step);
       }
       for (const tool_call of message.tool_calls ?? []) {
-        if (tool_call.name === "task") {
+        if (
+          tool_call.name === "task" ||
+          tool_call.name === "financial_analysis"
+        ) {
           continue;
         }
         const step: CoTToolCallStep = {

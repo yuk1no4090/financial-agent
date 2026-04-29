@@ -256,7 +256,7 @@ def test_route_decision_for_supply_risk_follow_up_prefers_memory_glm() -> None:
     assert decision.memory_enabled is True
 
 
-def test_financial_agent_after_model_prefixes_debug_header(monkeypatch) -> None:
+def test_financial_agent_after_model_hides_debug_header(monkeypatch) -> None:
     monkeypatch.setattr(
         frm,
         "get_app_config",
@@ -288,7 +288,8 @@ def test_financial_agent_after_model_prefixes_debug_header(monkeypatch) -> None:
 
     assert result is not None
     content = result["messages"][0].content
-    assert content.startswith("当前路由：financial_finma | memory=off | skill=off | rag=off\n当前调用模型：入口=financial-agent | lead=glm-4.5 | financial_tool=finma-sentiment-v3+finma-7b-nlp | strategy=v3_and_base")
+    assert "当前路由：" not in content
+    assert "当前调用模型：" not in content
     assert "如果只基于“苹果公司显示第一季度财报增长5%”这条信息来看，整体偏积极。" in content
 
 
@@ -332,7 +333,8 @@ def test_financial_agent_after_model_does_not_reuse_previous_turn_finma_payload(
 
     assert result is not None
     content = result["messages"][0].content
-    assert content.startswith("当前路由：financial_glm | memory=off | skill=off | rag=on | rag_source=finance_docs\n当前调用模型：入口=financial-agent | lead=glm-4.5 | financial_tool=none | strategy=lead_only")
+    assert "当前路由：" not in content
+    assert "当前调用模型：" not in content
     assert "finma-sentiment-v3" not in content
     assert "v3_and_base" not in content
     assert "通常会包括苹果、微软" in content
@@ -387,14 +389,15 @@ def test_financial_agent_prefers_direct_synthesis_for_short_v3_snippet(monkeypat
 
     assert result is not None
     content = result["messages"][0].content
-    assert content.startswith("当前路由：financial_finma | memory=off | skill=off | rag=off\n当前调用模型：入口=financial-agent | lead=glm-4.5 | financial_tool=finma-sentiment-v3+finma-7b-nlp | strategy=v3_and_base")
+    assert "当前路由：" not in content
+    assert "当前调用模型：" not in content
     assert "如果只基于“苹果公司显示第一季度财报增长5%”这条信息来看，整体偏积极。" in content
     assert "短线情绪信号和更宽泛的基本面解读方向基本一致。" in content
     assert "股价和投资者情绪具有正面影响" not in content
     assert "If the market was not already" not in content
 
 
-def test_glm_after_model_prefixes_debug_header(monkeypatch) -> None:
+def test_glm_after_model_hides_debug_header(monkeypatch) -> None:
     monkeypatch.setattr(
         frm,
         "get_app_config",
@@ -414,7 +417,8 @@ def test_glm_after_model_prefixes_debug_header(monkeypatch) -> None:
 
     assert result is not None
     content = result["messages"][0].content
-    assert content.startswith("当前路由：financial_glm | memory=off | skill=off | rag=on | rag_source=finance_docs\n当前调用模型：入口=glm | lead=glm-4.5 | financial_tool=none | strategy=lead_only")
+    assert "当前路由：" not in content
+    assert "当前调用模型：" not in content
     assert "通常会包括 Apple" in content
 
 

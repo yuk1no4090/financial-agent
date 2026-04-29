@@ -2,6 +2,8 @@ import type { AIMessage, Message } from "@langchain/langgraph-sdk";
 
 const INTERNAL_MARKUP_RE =
   /<system_reminder>|<tool_call>|<\/tool_call>|<arg_key>|<\/arg_key>|<arg_value>|<\/arg_value>|<function=|<\/function>|<parameter=|<\/parameter>/i;
+const INTERNAL_VISIBLE_LINE_RE =
+  /^\s*(?:当前路由：.*|当前调用模型：.*|使用\s*[“"]financial_analysis[”"]\s*工具.*)\s*$/gm;
 
 interface GenericMessageGroup<T = string> {
   type: T;
@@ -134,16 +136,20 @@ export function groupMessages<T>(
 
 export function extractTextFromMessage(message: Message) {
   if (typeof message.content === "string") {
-    return (
+    return sanitizeVisibleMessageText(
+      message,
       splitInlineReasoningFromAIMessage(message)?.content ??
-      message.content.trim()
+        message.content.trim(),
     );
   }
   if (Array.isArray(message.content)) {
-    return message.content
+    return sanitizeVisibleMessageText(
+      message,
+      message.content
       .map((content) => (content.type === "text" ? content.text : ""))
       .join("\n")
-      .trim();
+      .trim(),
+    );
   }
   return "";
 }
@@ -177,13 +183,16 @@ function splitInlineReasoningFromAIMessage(message: Message) {
 
 export function extractContentFromMessage(message: Message) {
   if (typeof message.content === "string") {
-    return (
+    return sanitizeVisibleMessageText(
+      message,
       splitInlineReasoningFromAIMessage(message)?.content ??
-      message.content.trim()
+        message.content.trim(),
     );
   }
   if (Array.isArray(message.content)) {
-    return message.content
+    return sanitizeVisibleMessageText(
+      message,
+      message.content
       .map((content) => {
         switch (content.type) {
           case "text":
@@ -196,9 +205,20 @@ export function extractContentFromMessage(message: Message) {
         }
       })
       .join("\n")
-      .trim();
+      .trim(),
+    );
   }
   return "";
+}
+
+function sanitizeVisibleMessageText(message: Message, text: string) {
+  if (!text || message.type === "human") {
+    return text;
+  }
+  return text
+    .replace(INTERNAL_VISIBLE_LINE_RE, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 export function extractReasoningContentFromMessage(message: Message) {

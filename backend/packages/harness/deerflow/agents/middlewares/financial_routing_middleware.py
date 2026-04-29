@@ -1192,44 +1192,6 @@ def _tool_model_names(payload: dict) -> list[str]:
     return names
 
 
-def _build_model_debug_header(runtime_context: dict | None, messages: list[object]) -> str:
-    context = runtime_context or {}
-    logical_model_name = str(context.get("model_name") or "default")
-    route = _route_decision(messages, context)
-    route_parts = [f"{_DEBUG_ROUTE_PREFIX}{route.route}"]
-    route_parts.append(f"memory={'on' if route.memory_enabled else 'off'}")
-    route_parts.append(f"skill={'on' if route.skill_enabled else 'off'}")
-    route_parts.append(f"rag={'on' if route.rag_enabled else 'off'}")
-    if route.skill_name:
-        route_parts.append(f"skill_name={route.skill_name}")
-    if route.rag_enabled:
-        route_parts.append(f"rag_source={route.rag_source_type}")
-    parts = [f"{_DEBUG_MODEL_PREFIX}入口={logical_model_name}"]
-
-    lead_model = _lead_model_target(logical_model_name)
-    if lead_model:
-        parts.append(f"lead={lead_model}")
-
-    if _is_financial_agent_model(logical_model_name) or _is_pure_model(logical_model_name):
-        payload = _latest_finma_payload(messages) or {}
-        tool_models = _tool_model_names(payload)
-        if tool_models:
-            parts.append(f"financial_tool={'+'.join(tool_models)}")
-            strategy = str(payload.get("model_strategy") or "")
-            if strategy:
-                parts.append(f"strategy={strategy}")
-        else:
-            parts.append("financial_tool=none")
-            parts.append("strategy=lead_only")
-
-    return "\n".join((" | ".join(route_parts), " | ".join(parts)))
-
-
-def _has_model_debug_prefix(text: str) -> bool:
-    stripped = text.lstrip()
-    return stripped.startswith(_DEBUG_MODEL_PREFIX) or stripped.startswith(_DEBUG_ROUTE_PREFIX)
-
-
 def _strip_debug_prefix_lines(text: str) -> str:
     if not text:
         return ""
@@ -1833,12 +1795,16 @@ def _latest_visible_ai_message(messages: list[object]) -> AIMessage | None:
     return None
 
 
-def _with_debug_prefix(message: AIMessage, runtime_context: dict | None, messages: list[object]) -> AIMessage | None:
+def _without_debug_prefix(message: AIMessage) -> AIMessage | None:
     content = _message_to_text(message.content).strip()
-    if not content or _has_model_debug_prefix(content):
+    if not content:
         return None
-    header = _build_model_debug_header(runtime_context, messages)
-    return _replace_ai_message_content(message, f"{header}\n\n{content}")
+    cleaned = _strip_debug_prefix_lines(content)
+    if not cleaned:
+        return None
+    if cleaned == content:
+        return message
+    return _replace_ai_message_content(message, cleaned)
 
 
 def _needs_pure_model_rewrite(messages: list[object]) -> bool:
@@ -2075,14 +2041,14 @@ class FinancialRoutingMiddleware(AgentMiddleware[AgentState]):
             sanitized = _build_pure_model_sanitized_update(messages)
             if sanitized is not None:
                 logger.info("FinancialRoutingMiddleware sanitized pseudo tool markup from pure GLM response")
-                debug_prefixed = _with_debug_prefix(sanitized, runtime.context, messages)
-                return {"messages": [debug_prefixed or sanitized]}
+                cleaned = _without_debug_prefix(sanitized)
+                return {"messages": [cleaned or sanitized]}
 
             last_ai = _latest_visible_ai_message(messages)
             if last_ai is not None:
-                debug_prefixed = _with_debug_prefix(last_ai, runtime.context, messages)
-                if debug_prefixed is not None:
-                    return {"messages": [debug_prefixed]}
+                cleaned = _without_debug_prefix(last_ai)
+                if cleaned is not None:
+                    return {"messages": [cleaned]}
             return None
 
         if not _is_financial_agent_model(model_name):
@@ -2105,14 +2071,14 @@ class FinancialRoutingMiddleware(AgentMiddleware[AgentState]):
             sanitized = _build_pure_model_sanitized_update(messages)
             if sanitized is not None:
                 logger.info("FinancialRoutingMiddleware sanitized pseudo tool markup for router direct route=%s", decision.route)
-                debug_prefixed = _with_debug_prefix(sanitized, runtime.context, messages)
-                return {"messages": [debug_prefixed or sanitized]}
+                cleaned = _without_debug_prefix(sanitized)
+                return {"messages": [cleaned or sanitized]}
 
             last_ai = _latest_visible_ai_message(messages)
             if last_ai is not None:
-                debug_prefixed = _with_debug_prefix(last_ai, runtime.context, messages)
-                if debug_prefixed is not None:
-                    return {"messages": [debug_prefixed]}
+                cleaned = _without_debug_prefix(last_ai)
+                if cleaned is not None:
+                    return {"messages": [cleaned]}
             return None
 
         if _needs_financial_answer_rewrite(messages):
@@ -2124,10 +2090,10 @@ class FinancialRoutingMiddleware(AgentMiddleware[AgentState]):
                     last_ai = _latest_ai_after_index(messages, last_finma_index) if last_finma_index != -1 else None
                     if last_ai is not None:
                         replaced = _replace_ai_message_content(last_ai, direct_answer.content)
-                        debug_prefixed = _with_debug_prefix(replaced, runtime.context, messages)
-                        return {"messages": [debug_prefixed or replaced]}
-                    debug_prefixed = _with_debug_prefix(direct_answer, runtime.context, messages)
-                    return {"messages": [debug_prefixed or direct_answer]}
+                        cleaned = _without_debug_prefix(replaced)
+                        return {"messages": [cleaned or replaced]}
+                    cleaned = _without_debug_prefix(direct_answer)
+                    return {"messages": [cleaned or direct_answer]}
                 return None
 
             return {
@@ -2148,16 +2114,16 @@ class FinancialRoutingMiddleware(AgentMiddleware[AgentState]):
                 last_ai = _latest_ai_after_index(messages, last_finma_index) if last_finma_index != -1 else None
                 if last_ai is not None:
                     replaced = _replace_ai_message_content(last_ai, direct_answer.content)
-                    debug_prefixed = _with_debug_prefix(replaced, runtime.context, messages)
-                    return {"messages": [debug_prefixed or replaced]}
-                debug_prefixed = _with_debug_prefix(direct_answer, runtime.context, messages)
-                return {"messages": [debug_prefixed or direct_answer]}
+                    cleaned = _without_debug_prefix(replaced)
+                    return {"messages": [cleaned or replaced]}
+                cleaned = _without_debug_prefix(direct_answer)
+                return {"messages": [cleaned or direct_answer]}
 
         last_ai = _latest_visible_ai_message(messages)
         if last_ai is not None:
-            debug_prefixed = _with_debug_prefix(last_ai, runtime.context, messages)
-            if debug_prefixed is not None:
-                return {"messages": [debug_prefixed]}
+            cleaned = _without_debug_prefix(last_ai)
+            if cleaned is not None:
+                return {"messages": [cleaned]}
         return None
 
     def wrap_tool_call(
