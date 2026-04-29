@@ -108,11 +108,7 @@ def _normalize_model_result(result: dict, task: str, ticker: str) -> dict:
     normalized["task"] = task
     normalized["ticker"] = ticker or None
 
-    label = _clean_label(
-        normalized.get("label")
-        or normalized.get("stance")
-        or normalized.get("sentiment")
-    )
+    label = _clean_label(normalized.get("label") or normalized.get("stance") or normalized.get("sentiment"))
     if label:
         normalized["label"] = label
 
@@ -136,21 +132,13 @@ def _normalize_model_result(result: dict, task: str, ticker: str) -> dict:
     if rationale:
         normalized["rationale"] = rationale
 
-    market_implication = _clean_text(
-        normalized.get("market_implication")
-        or normalized.get("trading_takeaway")
-        or normalized.get("implication")
-    )
+    market_implication = _clean_text(normalized.get("market_implication") or normalized.get("trading_takeaway") or normalized.get("implication"))
     if not market_implication and label:
         market_implication = _generic_market_implication(label)
     if market_implication:
         normalized["market_implication"] = market_implication
 
-    watch_items = _to_string_list(
-        normalized.get("watch_items")
-        or normalized.get("watch_list")
-        or normalized.get("next_watch_items")
-    )
+    watch_items = _to_string_list(normalized.get("watch_items") or normalized.get("watch_list") or normalized.get("next_watch_items"))
     if watch_items:
         normalized["watch_items"] = watch_items[:4]
 
@@ -355,11 +343,7 @@ def _task_label_guide(task: str) -> str:
 
 def _prompt_for_model(model: str, task: str, ticker: str, output_schema: str, text: str) -> str:
     if "sentiment" in model.lower():
-        return (
-            "Classify the sentiment of this financial text. "
-            "Reply with exactly one label and nothing else: Positive, Neutral, Negative, or Mixed.\n\n"
-            f"Text:\n{text}"
-        )
+        return f"Classify the sentiment of this financial text. Reply with exactly one label and nothing else: Positive, Neutral, Negative, or Mixed.\n\nText:\n{text}"
 
     return (
         "You are FinMA, a financial analysis specialist.\n"
@@ -426,19 +410,13 @@ def _build_synthesis(
 ) -> dict:
     v3_result = _find_model_result(model_results, "sentiment")
     base_result = next(
-        (
-            result
-            for result in model_results
-            if "sentiment" not in str(result.get("model_used") or "").lower()
-        ),
+        (result for result in model_results if "sentiment" not in str(result.get("model_used") or "").lower()),
         None,
     )
     primary_result = base_result or v3_result or (model_results[0] if model_results else {})
     primary_label = _clean_label(primary_result.get("label") or primary_result.get("impact_direction"))
     v3_label = _clean_label(v3_result.get("label")) if isinstance(v3_result, dict) else ""
-    impact_direction = _clean_label(
-        primary_result.get("impact_direction") or _LABEL_DIRECTIONS.get(primary_label, primary_label)
-    )
+    impact_direction = _clean_label(primary_result.get("impact_direction") or _LABEL_DIRECTIONS.get(primary_label, primary_label))
 
     explanation = _first_nonempty(
         primary_result.get("rationale"),

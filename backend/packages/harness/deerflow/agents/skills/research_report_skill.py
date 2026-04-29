@@ -260,11 +260,7 @@ class ResearchReportSkill:
     def build_context(self, skill_input: ReportSkillInput, topic: str) -> dict[str, Any]:
         context_text = _sanitize_internal_text(skill_input.conversation_context)
         memory_text = _sanitize_internal_text(skill_input.memory_context)
-        key_entities = _dedupe_preserve_order(
-            [topic]
-            + _UPPER_TICKER_RE.findall(context_text)
-            + [part.strip() for part in re.split(r"[、,，/|和与及]", topic) if part.strip()]
-        )[:6]
+        key_entities = _dedupe_preserve_order([topic] + _UPPER_TICKER_RE.findall(context_text) + [part.strip() for part in re.split(r"[、,，/|和与及]", topic) if part.strip()])[:6]
 
         previous_claims: list[str] = []
         if context_text:

@@ -45,13 +45,7 @@ def _build_runtime_context(thread_id: str, config: dict) -> dict[str, Any]:
 
     configurable = config.get("configurable")
     if isinstance(configurable, dict):
-        runtime_context.update(
-            {
-                key: value
-                for key, value in configurable.items()
-                if key != "__pregel_runtime"
-            }
-        )
+        runtime_context.update({key: value for key, value in configurable.items() if key != "__pregel_runtime"})
 
     explicit_context = config.get("context")
     if isinstance(explicit_context, dict):

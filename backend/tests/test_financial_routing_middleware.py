@@ -8,8 +8,8 @@ import deerflow.agents.middlewares.financial_routing_middleware as frm
 from deerflow.agents.middlewares.financial_routing_middleware import (
     FinancialRoutingMiddleware,
     _build_direct_financial_answer,
-    _current_turn_finma_candidate,
     _build_pure_model_sanitized_update,
+    _current_turn_finma_candidate,
     _needs_financial_answer_rewrite,
     _route_decision,
 )
@@ -89,7 +89,7 @@ def test_pure_glm_after_model_requests_rewrite_before_hardcoded_fallback() -> No
     state = {
         "messages": [
             HumanMessage(content="历史上类似冲突对油价影响如何？"),
-            AIMessage(content="<function=web_search>{\"query\":\"oil conflict history\"}</function>"),
+            AIMessage(content='<function=web_search>{"query":"oil conflict history"}</function>'),
         ]
     }
     runtime = SimpleNamespace(context={"model_name": "glm"})
@@ -152,9 +152,7 @@ def test_current_turn_finma_candidate_accepts_short_financial_snippet() -> None:
 
 
 def test_route_decision_for_report_request_prefers_skill_glm() -> None:
-    decision = _route_decision(
-        [HumanMessage(content="请基于中东战争对油价影响写一份研究报告")]
-    )
+    decision = _route_decision([HumanMessage(content="请基于中东战争对油价影响写一份研究报告")])
 
     assert decision.route == "report_skill_glm"
     assert decision.skill_enabled is True
@@ -248,9 +246,7 @@ def test_financial_agent_after_model_prefixes_debug_header(monkeypatch) -> None:
     monkeypatch.setattr(
         frm,
         "get_app_config",
-        lambda: SimpleNamespace(
-            get_model_config=lambda name: SimpleNamespace(model="glm-4.5")
-        ),
+        lambda: SimpleNamespace(get_model_config=lambda name: SimpleNamespace(model="glm-4.5")),
     )
 
     middleware = FinancialRoutingMiddleware()
@@ -286,9 +282,7 @@ def test_financial_agent_after_model_does_not_reuse_previous_turn_finma_payload(
     monkeypatch.setattr(
         frm,
         "get_app_config",
-        lambda: SimpleNamespace(
-            get_model_config=lambda name: SimpleNamespace(model="glm-4.5")
-        ),
+        lambda: SimpleNamespace(get_model_config=lambda name: SimpleNamespace(model="glm-4.5")),
     )
 
     middleware = FinancialRoutingMiddleware()
@@ -334,9 +328,7 @@ def test_financial_agent_prefers_direct_synthesis_for_short_v3_snippet(monkeypat
     monkeypatch.setattr(
         frm,
         "get_app_config",
-        lambda: SimpleNamespace(
-            get_model_config=lambda name: SimpleNamespace(model="glm-4.5")
-        ),
+        lambda: SimpleNamespace(get_model_config=lambda name: SimpleNamespace(model="glm-4.5")),
     )
 
     middleware = FinancialRoutingMiddleware()
@@ -372,12 +364,7 @@ def test_financial_agent_prefers_direct_synthesis_for_short_v3_snippet(monkeypat
                     },
                 }
             ),
-            AIMessage(
-                content=(
-                    "苹果公司第一季度财报显示5%的增长，这是一个积极的财务表现。"
-                    "从市场情绪分析来看，这一增长信号对苹果公司的股价和投资者情绪具有正面影响。"
-                )
-            ),
+            AIMessage(content=("苹果公司第一季度财报显示5%的增长，这是一个积极的财务表现。从市场情绪分析来看，这一增长信号对苹果公司的股价和投资者情绪具有正面影响。")),
         ]
     }
     runtime = SimpleNamespace(context={"model_name": "financial-agent"})
@@ -386,9 +373,7 @@ def test_financial_agent_prefers_direct_synthesis_for_short_v3_snippet(monkeypat
 
     assert result is not None
     content = result["messages"][0].content
-    assert content.startswith(
-        "当前路由：financial_finma | memory=off | skill=off\n当前调用模型：入口=financial-agent | lead=glm-4.5 | financial_tool=finma-sentiment-v3+finma-7b-nlp | strategy=v3_and_base"
-    )
+    assert content.startswith("当前路由：financial_finma | memory=off | skill=off\n当前调用模型：入口=financial-agent | lead=glm-4.5 | financial_tool=finma-sentiment-v3+finma-7b-nlp | strategy=v3_and_base")
     assert "如果只基于“苹果公司显示第一季度财报增长5%”这条信息来看，整体偏积极。" in content
     assert "短线情绪信号和更宽泛的基本面解读方向基本一致。" in content
     assert "股价和投资者情绪具有正面影响" not in content
@@ -399,9 +384,7 @@ def test_glm_after_model_prefixes_debug_header(monkeypatch) -> None:
     monkeypatch.setattr(
         frm,
         "get_app_config",
-        lambda: SimpleNamespace(
-            get_model_config=lambda name: SimpleNamespace(model="glm-4.5")
-        ),
+        lambda: SimpleNamespace(get_model_config=lambda name: SimpleNamespace(model="glm-4.5")),
     )
 
     middleware = FinancialRoutingMiddleware()

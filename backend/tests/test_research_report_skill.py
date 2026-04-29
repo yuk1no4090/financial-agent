@@ -57,18 +57,7 @@ def test_plan_report_falls_back_to_default_outline_when_planner_json_is_invalid(
 
 def test_review_report_detects_internal_leakage_and_missing_sections() -> None:
     skill = ResearchReportSkill(
-        llm=FakeLLM(
-            [
-                (
-                    '{"title":"减肥食物研究报告","sections":['
-                    '{"heading":"核心结论","goal":"总结核心判断"},'
-                    '{"heading":"关键分析","goal":"展开分析"},'
-                    '{"heading":"风险点","goal":"说明限制"},'
-                    '{"heading":"简短总结","goal":"做收束"}'
-                    "]}"
-                )
-            ]
-        )
+        llm=FakeLLM([('{"title":"减肥食物研究报告","sections":[{"heading":"核心结论","goal":"总结核心判断"},{"heading":"关键分析","goal":"展开分析"},{"heading":"风险点","goal":"说明限制"},{"heading":"简短总结","goal":"做收束"}]}')])
     )
     skill_input = ReportSkillInput(
         user_query="请写一份报告",
@@ -103,7 +92,8 @@ def test_run_sync_rewrites_report_and_preserves_memory_context() -> None:
             (
                 "# 复合碳水研究报告\n\n"
                 "## 核心结论\n\n复合碳水更适合作为减脂阶段的主食基础，因为消化吸收速度相对平稳，能帮助控制饥饿感并维持训练与日常活动所需的稳定能量。\n\n"
-                "## 关键分析\n\n像燕麦、藜麦、红薯和全麦面包这类食物通常同时带来碳水、纤维和一定的饱腹感，因此比精制甜点或高糖面包更适合放进长期饮食结构中。对正在控制热量的人来说，它们更容易支持稳定执行，而不是只带来短时间饱足后又迅速饥饿。\n\n"
+                "## 关键分析\n\n像燕麦、藜麦、红薯和全麦面包这类食物通常同时带来碳水、纤维和一定的饱腹感，"
+                "因此比精制甜点或高糖面包更适合放进长期饮食结构中。对正在控制热量的人来说，它们更容易支持稳定执行，而不是只带来短时间饱足后又迅速饥饿。\n\n"
                 "## 风险点\n\n如果总摄入量控制不好，复合碳水同样可能造成热量过剩；另外，具体搭配方式、烹饪方式和个人活动量也会影响最终效果，因此不能把它理解成单独决定减脂结果的唯一因素。\n\n"
                 "## 简短总结\n\n如果只做一个简短判断，复合碳水是更适合长期减脂饮食的基础选择，但仍需要结合份量、蛋白质搭配和整体热量管理来看。"
             ),
@@ -115,10 +105,7 @@ def test_run_sync_rewrites_report_and_preserves_memory_context() -> None:
         language="zh",
         brief_report=True,
         memory_enabled=True,
-        conversation_context=(
-            "[User] 减肥食物推荐\n"
-            "[Assistant] 复合碳水化合物包括燕麦、藜麦、红薯和全麦面包。"
-        ),
+        conversation_context=("[User] 减肥食物推荐\n[Assistant] 复合碳水化合物包括燕麦、藜麦、红薯和全麦面包。"),
     )
 
     output = skill.run_sync(skill_input)

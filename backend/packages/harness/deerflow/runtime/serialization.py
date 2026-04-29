@@ -53,11 +53,7 @@ def serialize_lc_object(obj: Any) -> Any:
     if isinstance(obj, dict):
         if _should_hide_message_dict(obj):
             return _OMIT
-        return {
-            k: value
-            for k, raw in obj.items()
-            if (value := serialize_lc_object(raw)) is not _OMIT
-        }
+        return {k: value for k, raw in obj.items() if (value := serialize_lc_object(raw)) is not _OMIT}
     if isinstance(obj, (list, tuple)):
         return [value for item in obj if (value := serialize_lc_object(item)) is not _OMIT]
     if BaseMessage is not None and isinstance(obj, BaseMessage):

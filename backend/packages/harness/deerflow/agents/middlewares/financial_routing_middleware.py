@@ -553,6 +553,7 @@ class RouteDecision:
     skill_name: str | None = None
     brief_report: bool = False
 
+
 _PSEUDO_TOOL_RE = re.compile(
     r"<tool_call>[\s\S]*?(?:</tool_call>|$)"
     r"|<function=[\s\S]*?</function>"
@@ -1034,11 +1035,7 @@ def _has_model_debug_prefix(text: str) -> bool:
 def _strip_debug_prefix_lines(text: str) -> str:
     if not text:
         return ""
-    kept = [
-        line
-        for line in text.splitlines()
-        if not line.lstrip().startswith((_DEBUG_ROUTE_PREFIX, _DEBUG_MODEL_PREFIX))
-    ]
+    kept = [line for line in text.splitlines() if not line.lstrip().startswith((_DEBUG_ROUTE_PREFIX, _DEBUG_MODEL_PREFIX))]
     return "\n".join(kept).strip()
 
 
@@ -1199,9 +1196,7 @@ def _localize_watch_item(item: str, *, use_zh: bool) -> str:
 
 def _is_generic_market_implication(text: str) -> bool:
     lowered = text.strip().lower()
-    return lowered.startswith("if the market was not already") or lowered.startswith(
-        "the update is not strongly directional"
-    ) or lowered.startswith("the update is mixed enough")
+    return lowered.startswith("if the market was not already") or lowered.startswith("the update is not strongly directional") or lowered.startswith("the update is mixed enough")
 
 
 def _is_internal_placeholder(text: str) -> bool:
@@ -1268,13 +1263,7 @@ def _route_instruction(decision: RouteDecision) -> HumanMessage:
     elif decision.route == _ROUTE_REPORT_SKILL_GLM:
         content = _REPORT_SKILL_ROUTE_GUIDE
         if decision.memory_enabled:
-            content += (
-                "\n"
-                "<system_reminder>\n"
-                "This report request explicitly depends on earlier thread context.\n"
-                "- Reuse the immediately relevant earlier answer as grounding material before drafting.\n"
-                "</system_reminder>"
-            )
+            content += "\n<system_reminder>\nThis report request explicitly depends on earlier thread context.\n- Reuse the immediately relevant earlier answer as grounding material before drafting.\n</system_reminder>"
         if decision.brief_report:
             content += (
                 "\n"
@@ -1343,12 +1332,7 @@ def _build_finma_synthesis_instruction(messages: list[object]) -> HumanMessage:
     ]
     return HumanMessage(
         name="financial_analysis_synthesis_guide",
-        content=(
-            f"{_FINANCIAL_AGENT_SYNTHESIS_GUIDE}\n"
-            f"Additional context: {extra}\n"
-            "Grounding facts from the tool synthesis:\n"
-            + "\n".join(f"- {field}" for field in grounded_fields if not field.endswith("="))
-        ),
+        content=(f"{_FINANCIAL_AGENT_SYNTHESIS_GUIDE}\nAdditional context: {extra}\nGrounding facts from the tool synthesis:\n" + "\n".join(f"- {field}" for field in grounded_fields if not field.endswith("="))),
     )
 
 
@@ -1374,15 +1358,9 @@ def _build_direct_financial_answer(messages: list[object]) -> AIMessage | None:
     base_result = _base_model_result(payload)
     primary_result = base_result or _first_model_result(payload)
 
-    primary_label = (
-        str(synthesis.get("label") or "")
-        or _result_label(base_result)
-        or _result_label(v3_result)
-        or _result_label(primary_result)
-    ).lower()
+    primary_label = (str(synthesis.get("label") or "") or _result_label(base_result) or _result_label(v3_result) or _result_label(primary_result)).lower()
     explanation = _clean_explanation(
-        str(synthesis.get("explanation") or "")
-        or _result_explanation(primary_result),
+        str(synthesis.get("explanation") or "") or _result_explanation(primary_result),
         primary_label,
         source_text,
         use_zh=use_zh,
@@ -1390,8 +1368,7 @@ def _build_direct_financial_answer(messages: list[object]) -> AIMessage | None:
     if use_zh and explanation and not _contains_chinese(explanation):
         explanation = _generic_reason_from_label(primary_label, source_text, use_zh=True)
     market_implication = _clean_explanation(
-        str(synthesis.get("market_implication") or "")
-        or _result_market_implication(primary_result),
+        str(synthesis.get("market_implication") or "") or _result_market_implication(primary_result),
         primary_label,
         source_text,
         use_zh=use_zh,
@@ -1399,26 +1376,23 @@ def _build_direct_financial_answer(messages: list[object]) -> AIMessage | None:
     if not market_implication or (use_zh and (not _contains_chinese(market_implication) or _is_generic_market_implication(market_implication))):
         market_implication = _generic_market_implication_from_label(primary_label, use_zh=use_zh)
 
-    watch_items = [
-        _localize_watch_item(str(item).strip(), use_zh=use_zh)
-        for item in (
-            synthesis.get("watch_items")
-            if isinstance(synthesis.get("watch_items"), list)
-            else _result_watch_items(primary_result)
-        )
-        if str(item).strip()
-    ]
+    watch_items = [_localize_watch_item(str(item).strip(), use_zh=use_zh) for item in (synthesis.get("watch_items") if isinstance(synthesis.get("watch_items"), list) else _result_watch_items(primary_result)) if str(item).strip()]
     agreement = str(synthesis.get("agreement") or "")
 
     if use_zh:
         label_zh = _label_to_zh(primary_label)
         opener = f"这段信息整体偏{label_zh}。"
-        if source_text and len(source_text) <= 96 and task in {
-            "sentiment",
-            "financial_signal_extraction",
-            "event_impact",
-            "general_financial_analysis",
-        }:
+        if (
+            source_text
+            and len(source_text) <= 96
+            and task
+            in {
+                "sentiment",
+                "financial_signal_extraction",
+                "event_impact",
+                "general_financial_analysis",
+            }
+        ):
             opener = f"如果只基于“{_short_source_excerpt(source_text, use_zh=True)}”这条信息来看，整体偏{label_zh}。"
         if task == "risk_classification" and primary_label:
             opener = f"这段信息里更值得关注的是{label_zh}这一层风险。"
@@ -1435,17 +1409,22 @@ def _build_direct_financial_answer(messages: list[object]) -> AIMessage | None:
         if market_implication:
             details.append(market_implication)
         if watch_items:
-            details.append(f"后续更值得继续跟踪的是{ '、'.join(watch_items[:3]) }。")
+            details.append(f"后续更值得继续跟踪的是{'、'.join(watch_items[:3])}。")
 
         content = "\n\n".join(part for part in [opener, " ".join(details).strip()] if part.strip())
     else:
         opener = f"The overall read is {primary_label or 'mixed'}."
-        if source_text and len(source_text) <= 160 and task in {
-            "sentiment",
-            "financial_signal_extraction",
-            "event_impact",
-            "general_financial_analysis",
-        }:
+        if (
+            source_text
+            and len(source_text) <= 160
+            and task
+            in {
+                "sentiment",
+                "financial_signal_extraction",
+                "event_impact",
+                "general_financial_analysis",
+            }
+        ):
             opener = f'Based on "{_short_source_excerpt(source_text, use_zh=False)}" alone, the read is {primary_label or "mixed"}.'
         if task == "risk_classification" and primary_label:
             opener = f"The main takeaway here is {primary_label.replace('_', ' ')} risk."
@@ -1564,16 +1543,11 @@ def _build_pure_model_sanitized_update(messages: list[object]) -> AIMessage | No
     needs_realtime = any(term in user_lowered or term in user_text for term in {"latest", "current", "today", "2026", "最新", "当前", "现在", "实时", "市值", "排名"})
 
     if needs_realtime:
-        content = (
-            "我现在没法替你核验实时数据，但可以先基于通用金融知识给你一个方向性判断。"
-            "如果你需要精确到当前价格、排名或最新事件，请再配合实时行情或改用 Financial Agent 模式。"
-        )
+        content = "我现在没法替你核验实时数据，但可以先基于通用金融知识给你一个方向性判断。如果你需要精确到当前价格、排名或最新事件，请再配合实时行情或改用 Financial Agent 模式。"
     elif cleaned and len(cleaned) >= 12 and "<" not in cleaned and ">" not in cleaned:
         content = cleaned
     else:
-        content = (
-            "我先按纯 GLM 模式直接回答：如果你希望我结合实时数据、新闻或专门的金融专家模型，再切换到 Financial Agent 会更合适。"
-        )
+        content = "我先按纯 GLM 模式直接回答：如果你希望我结合实时数据、新闻或专门的金融专家模型，再切换到 Financial Agent 会更合适。"
 
     update = {"content": content, "tool_calls": []}
     additional_kwargs = dict(getattr(last_msg, "additional_kwargs", {}) or {})
@@ -1599,12 +1573,7 @@ def _looks_like_json_blob(text: str) -> bool:
 
 def _has_rigid_financial_headings(text: str) -> bool:
     lowered = text.lower()
-    return (
-        ("结论：" in text and "理由：" in text)
-        or ("结论：" in text and "影响：" in text)
-        or ("conclusion:" in lowered and "reason:" in lowered)
-        or ("conclusion:" in lowered and "impact:" in lowered)
-    )
+    return ("结论：" in text and "理由：" in text) or ("结论：" in text and "影响：" in text) or ("conclusion:" in lowered and "reason:" in lowered) or ("conclusion:" in lowered and "impact:" in lowered)
 
 
 def _mentions_internal_finance_markup(text: str) -> bool:
@@ -1635,12 +1604,7 @@ def _needs_financial_answer_rewrite(messages: list[object]) -> bool:
         return False
 
     content = _message_to_text(last_ai.content)
-    return (
-        _is_label_only_response(content)
-        or _looks_like_json_blob(content)
-        or _has_rigid_financial_headings(content)
-        or _mentions_internal_finance_markup(content)
-    )
+    return _is_label_only_response(content) or _looks_like_json_blob(content) or _has_rigid_financial_headings(content) or _mentions_internal_finance_markup(content)
 
 
 class FinancialRoutingMiddleware(AgentMiddleware[AgentState]):
@@ -1864,10 +1828,7 @@ class FinancialRoutingMiddleware(AgentMiddleware[AgentState]):
                 status="error",
             )
 
-        if tool_name == "financial_analysis" and (
-            not _is_financial_agent_model(model_name)
-            or _route_decision(state_messages, runtime.context if runtime else {}).route != _ROUTE_FINANCIAL_FINMA
-        ):
+        if tool_name == "financial_analysis" and (not _is_financial_agent_model(model_name) or _route_decision(state_messages, runtime.context if runtime else {}).route != _ROUTE_FINANCIAL_FINMA):
             return ToolMessage(
                 content="Error: `financial_analysis` is reserved for the financial_finma router route.",
                 tool_call_id=str(request.tool_call.get("id") or "missing_tool_call_id"),
@@ -1929,10 +1890,7 @@ class FinancialRoutingMiddleware(AgentMiddleware[AgentState]):
                 status="error",
             )
 
-        if tool_name == "financial_analysis" and (
-            not _is_financial_agent_model(model_name)
-            or _route_decision(state_messages, runtime.context if runtime else {}).route != _ROUTE_FINANCIAL_FINMA
-        ):
+        if tool_name == "financial_analysis" and (not _is_financial_agent_model(model_name) or _route_decision(state_messages, runtime.context if runtime else {}).route != _ROUTE_FINANCIAL_FINMA):
             return ToolMessage(
                 content="Error: `financial_analysis` is reserved for the financial_finma router route.",
                 tool_call_id=str(request.tool_call.get("id") or "missing_tool_call_id"),
